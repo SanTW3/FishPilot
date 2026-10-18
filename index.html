@@ -1,0 +1,216 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>GPO Fishing Macro</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+  :root {
+    --bg: #0f1419; --card: #1a2129; --border: #26303b; --field: #232c36;
+    --text: #e6edf3; --muted: #7d8b99; --accent: #3b8eea;
+    --green: #2ea043; --red: #da3633; --orange: #d29922;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; background: var(--bg); color: var(--text);
+    font: 15px/1.4 -apple-system, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 480px; margin: 0 auto; padding: 16px; }
+  header { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
+  header h1 { font-size: 20px; margin: 0; }
+  .logo { width: 36px; height: 36px; border-radius: 9px;
+    background: linear-gradient(#2f8de8, #1f3f8a); display: grid; place-items: center; font-size: 20px; }
+  .pill { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px;
+    font-size: 12px; font-weight: 700; color: #fff; background: var(--muted); margin-top: 3px; }
+  .pill::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: #fff; }
+  .pill.on { background: var(--green); } .pill.off { background: var(--red); }
+  .pill.away { background: var(--field); color: var(--muted); } .pill.away::before { background: var(--muted); }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px; }
+  .stat { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 12px; text-align: center; }
+  .stat b { display: block; font-size: 26px; font-variant-numeric: tabular-nums; }
+  .stat span { color: var(--muted); font-size: 12px; }
+  .alarm { display: none; background: #3d1d1d; border: 1px solid var(--red); border-radius: 14px;
+    padding: 12px; margin-bottom: 12px; }
+  .alarm.show { display: block; }
+  .alarm p { margin: 4px 0 10px; color: #ffb4ad; }
+  button { width: 100%; border: 0; border-radius: 14px; padding: 15px; font: inherit; font-weight: 700;
+    color: #fff; background: var(--field); cursor: pointer; transition: transform .08s, opacity .2s; }
+  button:active { transform: scale(.98); }
+  button:disabled { opacity: .45; }
+  .big { font-size: 18px; padding: 18px; margin-bottom: 8px; }
+  .start { background: var(--green); } .stop { background: var(--red); }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px; }
+  .danger { background: var(--red); }
+  .meta { color: var(--muted); font-size: 12px; text-align: center; margin-top: 10px; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 16px; }
+  .card h2 { font-size: 16px; margin: 0 0 6px; }
+  .card p { color: var(--muted); margin: 0; }
+  #toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%) translateY(20px); opacity: 0;
+    background: var(--card); border: 1px solid var(--border); padding: 10px 16px; border-radius: 12px;
+    transition: .25s; pointer-events: none; font-size: 14px; max-width: 90vw; text-align: center; }
+  #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <div class="logo">🎣</div>
+    <div>
+      <h1>GPO Fishing Macro</h1>
+      <div id="pill" class="pill away">Подключение…</div>
+    </div>
+  </header>
+
+  <div id="setup" class="card" hidden>
+    <h2>Нет ссылки на макрос</h2>
+    <p>Откройте панель кнопкой «Панель» в чате с ботом или нажмите в макросе
+      «Send panel to Telegram» (Literally Everything Else → Phone Alarm).</p>
+  </div>
+
+  <div id="app" hidden>
+    <div id="alarm" class="alarm">
+      <b>🚨 Тревога</b>
+      <p id="alarmText"></p>
+      <button class="danger" data-cmd="alarm_off">Сбросить тревогу</button>
+    </div>
+
+    <div class="grid">
+      <div class="stat"><b id="catches">–</b><span>Поймано</span></div>
+      <div class="stat"><b id="casts">–</b><span>Забросов</span></div>
+      <div class="stat"><b id="runtime">–</b><span>Время</span></div>
+      <div class="stat"><b id="rate">–</b><span>Рыбы в час</span></div>
+    </div>
+
+    <button id="toggle" class="big start" data-cmd="start">▶ Старт</button>
+    <div class="row">
+      <button id="screen" data-cmd="screen_off">🌑 Погасить</button>
+      <button data-cmd="shot">📸 Скриншот</button>
+    </div>
+    <div class="meta" id="meta">Ждём статус от ПК…</div>
+  </div>
+</main>
+<div id="toast"></div>
+
+<script>
+(() => {
+  const tg = window.Telegram && Telegram.WebApp;
+  if (tg) {
+    tg.ready();
+    tg.expand();
+    try { tg.setHeaderColor("#0f1419"); tg.setBackgroundColor("#0f1419"); } catch (e) {}
+  }
+  const $ = id => document.getElementById(id);
+  const hash = new URLSearchParams(location.hash.slice(1));
+  const secret = hash.get("t");
+  const server = (hash.get("s") || "https://ntfy.sh").replace(/\/+$/, "");
+  if (!secret || !/^[A-Za-z0-9_-]{8,}$/.test(secret)) {
+    $("setup").hidden = false;
+    $("pill").textContent = "Не настроено";
+    return;
+  }
+  $("app").hidden = false;
+  const statusTopic = `gpo-${secret}-status`;
+  const cmdTopic = `gpo-${secret}-cmd`;
+  const OFFLINE_AFTER = 75; // ПК шлёт статус минимум раз в 30 с
+
+  let status = null;
+  let fetched = false;
+  let toastTimer = null;
+
+  function toast(text) {
+    $("toast").textContent = text;
+    $("toast").classList.add("show");
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => $("toast").classList.remove("show"), 2200);
+  }
+
+  function fmtTime(sec) {
+    sec = Math.max(0, Math.floor(sec));
+    const h = Math.floor(sec / 3600), m = Math.floor(sec % 3600 / 60), s = sec % 60;
+    return `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+  }
+
+  function render() {
+    const now = Date.now() / 1000;
+    const online = status && now - status.ts < OFFLINE_AFTER;
+    const pill = $("pill");
+    if (!status) {
+      pill.className = "pill away"; pill.textContent = fetched ? "ПК не в сети" : "Подключение…";
+      $("meta").textContent = fetched ? "Запустите макрос на ПК — статус появится сам" : "Ждём статус от ПК…";
+    } else if (!online) {
+      pill.className = "pill away"; pill.textContent = "ПК не в сети";
+    } else if (status.running) {
+      pill.className = "pill on"; pill.textContent = status.state || "Работает";
+    } else {
+      pill.className = "pill off"; pill.textContent = status.state || "Остановлен";
+    }
+    document.querySelectorAll("button").forEach(b => b.disabled = !online);
+    if (!status) return;
+
+    const runtime = status.running ? status.runtime + (now - status.ts) : status.runtime;
+    $("catches").textContent = status.catches;
+    $("casts").textContent = status.casts;
+    $("runtime").textContent = fmtTime(runtime);
+    $("rate").textContent = runtime >= 60 ? Math.round(status.catches * 3600 / runtime) : "0";
+
+    const toggle = $("toggle");
+    toggle.className = "big " + (status.running ? "stop" : "start");
+    toggle.textContent = status.running ? "■ Стоп" : "▶ Старт";
+    toggle.dataset.cmd = status.running ? "stop" : "start";
+
+    const scr = $("screen");
+    scr.textContent = status.blackout ? "🔆 Вкл. экран" : "🌑 Погасить";
+    scr.dataset.cmd = status.blackout ? "screen_on" : "screen_off";
+
+    $("alarm").classList.toggle("show", !!status.alarm);
+    $("alarmText").textContent = status.alarm || "";
+    const ago = Math.max(0, Math.round(now - status.ts));
+    $("meta").textContent = online ? `Обновлено ${ago} с назад` : `Последний статус ${fmtTime(ago)} назад`;
+  }
+
+  function accept(msg) {
+    if (!msg || msg.event !== "message") return;
+    try {
+      const s = JSON.parse(msg.message);
+      if (!status || s.ts >= status.ts) { status = s; render(); }
+    } catch (e) {}
+  }
+
+  async function send(cmd) {
+    if (tg && tg.HapticFeedback) tg.HapticFeedback.impactOccurred("medium");
+    try {
+      const r = await fetch(`${server}/${cmdTopic}`, { method: "POST", body: cmd });
+      if (!r.ok) throw new Error(r.status);
+      toast(cmd === "shot" ? "Скриншот придёт в чат с ботом" : "Команда отправлена");
+    } catch (e) {
+      toast("Не удалось отправить: нет сети?");
+    }
+  }
+
+  document.addEventListener("click", e => {
+    const b = e.target.closest("button[data-cmd]");
+    if (!b || b.disabled) return;
+    if (b.dataset.cmd === "stop" && tg && tg.showConfirm) {
+      tg.showConfirm("Остановить макрос?", ok => ok && send("stop"));
+    } else {
+      send(b.dataset.cmd);
+    }
+  });
+
+  // Последний статус (ПК шлёт его минимум раз в 30 с, так что хватает 2 минут), затем живой поток
+  fetch(`${server}/${statusTopic}/json?poll=1&since=2m`)
+    .then(r => r.text())
+    .then(t => t.trim().split("\n").filter(Boolean).forEach(l => { try { accept(JSON.parse(l)); } catch (e) {} }))
+    .catch(() => {})
+    .finally(() => { fetched = true; render(); });
+
+  function listen() {
+    const es = new EventSource(`${server}/${statusTopic}/sse`);
+    es.onmessage = ev => { try { accept(JSON.parse(ev.data)); } catch (e) {} };
+    es.onerror = () => { es.close(); setTimeout(listen, 3000); };
+  }
+  listen();
+  setInterval(render, 1000);
+})();
+</script>
+</body>
+</html>
