@@ -85,8 +85,24 @@
   .fish { background: rgba(11,31,69,.92); padding: 10px 22px 12px; margin-bottom: 8px; }
   .fish h3 { margin: 0 0 6px; font-size: 18px; font-style: italic; text-transform: uppercase; color: var(--hilite); }
   .fish ol { list-style: none; margin: 0 0 10px; padding: 0; }
-  .fish li { display: flex; justify-content: space-between; padding: 4px 0; font-size: 18px;
+  .fish li { display: flex; align-items: center; gap: 10px; padding: 5px 0; font-size: 18px;
     border-bottom: 1px solid rgba(94,224,255,.12); }
+  .fish li .name { flex: 1; font-weight: 700; }
+  .fish li img, .fish li .noicon { width: 38px; height: 38px; background: #4f4f4f; object-fit: contain;
+    border: 2px solid var(--muted); flex: none; }
+  .fish .r-common .name { color: #e8eef5; } .fish .r-common img { border-color: #e8eef5; }
+  .fish .r-rare .name { color: #4fd8ff; } .fish .r-rare img { border-color: #4fd8ff; }
+  .fish .r-epic .name { color: #b48cff; } .fish .r-epic img { border-color: #b48cff; }
+  /* Легендарная — название и рамка переливаются радугой */
+  .fish .r-legendary .name { background: linear-gradient(90deg, #ff5f6d, #ffc371, #f9f871, #6bff9e, #4fd8ff, #b48cff, #ff5f6d);
+    background-size: 300% 100%; -webkit-background-clip: text; background-clip: text; color: transparent;
+    animation: rainbow 3s linear infinite; }
+  .fish .r-legendary img { border-color: transparent; background:
+      linear-gradient(#4f4f4f, #4f4f4f) padding-box,
+      linear-gradient(90deg, #ff5f6d, #ffc371, #f9f871, #6bff9e, #4fd8ff, #b48cff, #ff5f6d) border-box;
+    background-size: 100% 100%, 300% 100%; animation: rainbow 3s linear infinite; }
+  @keyframes rainbow { to { background-position: 300% 0; } }
+  @media (prefers-reduced-motion: reduce) { .r-legendary .name, .r-legendary img { animation: none; } }
   .fish li b { color: var(--hilite); font-style: italic; }
   .fish .empty { color: var(--muted); font-style: italic; }
   .meta { color: var(--muted); font-size: 14px; text-align: center; margin-top: 10px; font-style: italic; }
@@ -236,11 +252,22 @@
     }
     for (const f of fish) {
       const li = document.createElement("li");
+      if (["common", "rare", "epic", "legendary"].includes(f.rarity)) li.className = "r-" + f.rarity;
+      let icon;
+      if (f.id && /^[0-9a-z_-]+$/i.test(f.id)) {
+        icon = document.createElement("img");
+        icon.src = `fish/${f.id}.png`;
+        icon.alt = "";
+      } else {
+        icon = document.createElement("span");
+        icon.className = "noicon";
+      }
       const name = document.createElement("span");
-      const count = document.createElement("b");
+      name.className = "name";
       name.textContent = f.name;
+      const count = document.createElement("b");
       count.textContent = "× " + f.count;
-      li.append(name, count);
+      li.append(icon, name, count);
       list.append(li);
     }
 
