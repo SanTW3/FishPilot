@@ -82,6 +82,13 @@
   .row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px; }
   .row button { background: linear-gradient(100deg, #10306a, var(--card)); border-bottom: 2px solid var(--accent); }
   .danger { background: var(--red); }
+  .fish { background: rgba(11,31,69,.92); padding: 10px 22px 12px; margin-bottom: 8px; }
+  .fish h3 { margin: 0 0 6px; font-size: 18px; font-style: italic; text-transform: uppercase; color: var(--hilite); }
+  .fish ol { list-style: none; margin: 0 0 10px; padding: 0; }
+  .fish li { display: flex; justify-content: space-between; padding: 4px 0; font-size: 18px;
+    border-bottom: 1px solid rgba(94,224,255,.12); }
+  .fish li b { color: var(--hilite); font-style: italic; }
+  .fish .empty { color: var(--muted); font-style: italic; }
   .meta { color: var(--muted); font-size: 14px; text-align: center; margin-top: 10px; font-style: italic; }
   .card { background: rgba(11,31,69,.92); padding: 16px 22px; }
   .card h2 { font-size: 22px; font-style: italic; text-transform: uppercase; color: var(--hilite); margin: 0 0 6px; }
@@ -107,7 +114,7 @@
   <header>
     <div class="title">
       <div class="gpo">GPO</div>
-      <div class="sub"><span>Fishing</span>Macro</div>
+      <div class="sub"><span>Рыбалка</span>Макрос</div>
     </div>
     <div id="pill" class="pill away">Подключение…</div>
   </header>
@@ -136,6 +143,11 @@
     <div class="row">
       <button id="screen" data-cmd="screen_off">🌑 Погасить</button>
       <button data-cmd="shot">📸 Скриншот</button>
+    </div>
+    <div class="fish slant">
+      <h3>🐟 Улов</h3>
+      <ol id="fishList"><li class="empty">Пока ничего — или журнал улова выключен в макросе</li></ol>
+      <button data-cmd="catches">Список с иконками в чат</button>
     </div>
     <div class="meta" id="meta">Ждём статус от ПК…</div>
   </div>
@@ -213,6 +225,25 @@
     scr.textContent = status.blackout ? "🔆 Вкл. экран" : "🌑 Погасить";
     scr.dataset.cmd = status.blackout ? "screen_on" : "screen_off";
 
+    const list = $("fishList");
+    list.replaceChildren();
+    const fish = status.fish || [];
+    if (!fish.length) {
+      const li = document.createElement("li");
+      li.className = "empty";
+      li.textContent = "Пока ничего — или журнал улова выключен в макросе";
+      list.append(li);
+    }
+    for (const f of fish) {
+      const li = document.createElement("li");
+      const name = document.createElement("span");
+      const count = document.createElement("b");
+      name.textContent = f.name;
+      count.textContent = "× " + f.count;
+      li.append(name, count);
+      list.append(li);
+    }
+
     $("alarm").classList.toggle("show", !!status.alarm);
     $("alarmText").textContent = status.alarm || "";
     const ago = Math.max(0, Math.round(now - status.ts));
@@ -232,7 +263,8 @@
     try {
       const r = await fetch(`${server}/${cmdTopic}`, { method: "POST", body: cmd });
       if (!r.ok) throw new Error(r.status);
-      toast(cmd === "shot" ? "Скриншот придёт в чат с ботом" : "Команда отправлена");
+      toast(cmd === "shot" ? "Скриншот придёт в чат с ботом"
+        : cmd === "catches" ? "Список улова придёт в чат с ботом" : "Команда отправлена");
     } catch (e) {
       toast("Не удалось отправить: нет сети?");
     }
