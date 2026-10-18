@@ -254,7 +254,7 @@
       const li = document.createElement("li");
       if (["common", "rare", "epic", "legendary"].includes(f.rarity)) li.className = "r-" + f.rarity;
       let icon;
-      if (f.id && /^[0-9a-z_-]+$/i.test(f.id)) {
+      if (f.id && /^[0-9]+$/.test(f.id)) {  // выученные на ПК рыбы (u001…) иконки на сайте не имеют
         icon = document.createElement("img");
         icon.src = `fish/${f.id}.png`;
         icon.alt = "";
