@@ -5,79 +5,131 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <title>GPO Fishing Macro</title>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:ital,wght@0,600;1,600;1,800&display=swap" rel="stylesheet">
 <style>
+  /* Морская тема в духе Persona 3 Reload: глубина, циан, косые плашки, курсив капсом.
+     Анимации только transform/opacity (дёшево для GPU) и выключаются при «уменьшить движение». */
   :root {
-    --bg: #0f1419; --card: #1a2129; --border: #26303b; --field: #232c36;
-    --text: #e6edf3; --muted: #7d8b99; --accent: #3b8eea;
-    --green: #2ea043; --red: #da3633; --orange: #d29922;
+    --deep: #020b1f; --bg: #06122b; --card: #0b1f45; --border: #16407a; --field: #0a1838;
+    --text: #eaf6ff; --muted: #7fa6d1; --accent: #1a9be0; --hilite: #5ee0ff;
+    --green: #14b37d; --red: #e0405a; --orange: #f2a33a;
+    --cut: 14px;
   }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-  html, body { margin: 0; background: var(--bg); color: var(--text);
-    font: 15px/1.4 -apple-system, "Segoe UI", Roboto, sans-serif; }
-  main { max-width: 480px; margin: 0 auto; padding: 16px; }
-  header { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
-  header h1 { font-size: 20px; margin: 0; }
-  .logo { width: 36px; height: 36px; border-radius: 9px;
-    background: linear-gradient(#2f8de8, #1f3f8a); display: grid; place-items: center; font-size: 20px; }
-  .pill { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px;
-    font-size: 12px; font-weight: 700; color: #fff; background: var(--muted); margin-top: 3px; }
-  .pill::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: #fff; }
+  html, body { margin: 0; min-height: 100%; color: var(--text);
+    font: 15px/1.4 "Barlow Condensed", "Bahnschrift", "Roboto Condensed", "Arial Narrow", sans-serif; }
+  body { background: linear-gradient(170deg, var(--deep) 0%, var(--bg) 45%, #0b3a86 100%) fixed; overflow-x: hidden; }
+
+  /* Лучи света сквозь воду */
+  .rays { position: fixed; inset: 0; pointer-events: none; z-index: 0;
+    background: repeating-linear-gradient(115deg, transparent 0 70px, rgba(120,220,255,.05) 70px 110px, transparent 110px 190px); }
+  /* Волны внизу */
+  .waves { position: fixed; left: 0; right: 0; bottom: 0; height: 90px; pointer-events: none; z-index: 0; overflow: hidden; }
+  .waves svg { position: absolute; bottom: 0; width: 200%; height: 100%; animation: drift 14s linear infinite; }
+  .waves svg + svg { animation-duration: 22s; opacity: .6; bottom: -10px; }
+  @keyframes drift { to { transform: translateX(-50%); } }
+  /* Пузыри */
+  .bubble { position: fixed; bottom: -20px; border-radius: 50%; pointer-events: none; z-index: 0;
+    border: 1.5px solid rgba(170,230,255,.45); background: radial-gradient(circle at 30% 30%, rgba(220,245,255,.35), transparent 45%);
+    animation: rise linear infinite; }
+  @keyframes rise { to { transform: translateY(-110vh) translateX(20px); opacity: 0; } }
+  @media (prefers-reduced-motion: reduce) { .waves svg, .bubble { animation: none; } .bubble { display: none; } }
+
+  main { position: relative; z-index: 1; max-width: 480px; margin: 0 auto; padding: 16px 16px 110px; }
+
+  /* Шапка с косой циановой полосой */
+  header { position: relative; padding: 18px 0 22px 4px; margin-bottom: 14px; }
+  header::before { content: ""; position: absolute; left: -16px; right: 18%; top: 8px; bottom: 10px;
+    background: rgba(26,155,224,.28); clip-path: polygon(0 0, 100% 0, calc(100% - 28px) 100%, 0 100%); }
+  header::after { content: ""; position: absolute; left: -16px; right: calc(18% + 26px); bottom: 6px; height: 4px;
+    background: var(--hilite); clip-path: polygon(0 0, 100% 0, calc(100% - 2px) 100%, 0 100%); }
+  .title { position: relative; display: flex; align-items: center; gap: 10px; font-style: italic; text-transform: uppercase; }
+  .title .gpo { font-size: 46px; font-weight: 800; line-height: .9; letter-spacing: 1px; }
+  .title .sub { font-size: 17px; font-weight: 800; line-height: 1.05; }
+  .title .sub span { color: var(--hilite); display: block; }
+  .pill { position: relative; display: inline-block; margin-top: 8px; padding: 2px 12px 2px 10px; font-size: 14px;
+    font-weight: 800; font-style: italic; text-transform: uppercase; color: #fff; background: var(--muted);
+    clip-path: polygon(6px 0, 100% 0, calc(100% - 6px) 100%, 0 100%); }
+  .pill::before { content: "● "; }
   .pill.on { background: var(--green); } .pill.off { background: var(--red); }
-  .pill.away { background: var(--field); color: var(--muted); } .pill.away::before { background: var(--muted); }
+  .pill.away { background: var(--field); color: var(--muted); }
+
+  /* Карточки и кнопки — скошенные углы */
+  .slant { clip-path: polygon(var(--cut) 0, 100% 0, calc(100% - var(--cut)) 100%, 0 100%); }
   .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px; }
-  .stat { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 12px; text-align: center; }
-  .stat b { display: block; font-size: 26px; font-variant-numeric: tabular-nums; }
-  .stat span { color: var(--muted); font-size: 12px; }
-  .alarm { display: none; background: #3d1d1d; border: 1px solid var(--red); border-radius: 14px;
-    padding: 12px; margin-bottom: 12px; }
-  .alarm.show { display: block; }
-  .alarm p { margin: 4px 0 10px; color: #ffb4ad; }
-  button { width: 100%; border: 0; border-radius: 14px; padding: 15px; font: inherit; font-weight: 700;
-    color: #fff; background: var(--field); cursor: pointer; transition: transform .08s, opacity .2s; }
-  button:active { transform: scale(.98); }
-  button:disabled { opacity: .45; }
-  .big { font-size: 18px; padding: 18px; margin-bottom: 8px; }
-  .start { background: var(--green); } .stop { background: var(--red); }
+  .stat { position: relative; background: rgba(11,31,69,.92); padding: 10px 18px 8px; text-align: center; }
+  .stat::before { content: ""; position: absolute; left: var(--cut); top: 0; width: 38%; height: 3px; background: var(--hilite); }
+  .stat b { display: block; font-size: 34px; font-weight: 800; font-style: italic; font-variant-numeric: tabular-nums; line-height: 1.1; }
+  .stat span { color: var(--hilite); font-size: 14px; font-style: italic; text-transform: uppercase; letter-spacing: .5px; }
+
+  .alarm { display: none; background: rgba(58,15,42,.95); border-left: 4px solid var(--red); padding: 12px 14px; margin-bottom: 12px; }
+  .alarm.show { display: block; animation: pulse 1.6s ease-in-out infinite; }
+  @keyframes pulse { 50% { opacity: .82; } }
+  .alarm b { font-size: 20px; font-style: italic; text-transform: uppercase; }
+  .alarm p { margin: 4px 0 10px; color: #ffb4c2; font-size: 16px; }
+
+  button { width: 100%; border: 0; padding: 14px; font: inherit; font-size: 19px; font-weight: 800; font-style: italic;
+    text-transform: uppercase; letter-spacing: .5px; color: #fff; background: var(--card); cursor: pointer;
+    clip-path: polygon(var(--cut) 0, 100% 0, calc(100% - var(--cut)) 100%, 0 100%);
+    transition: transform .08s, filter .15s, opacity .2s; }
+  button:active { transform: scale(.97); filter: brightness(1.2); }
+  button:disabled { opacity: .4; }
+  .big { font-size: 26px; padding: 16px; margin-bottom: 8px; }
+  .start { background: linear-gradient(100deg, var(--green), #0f9468); box-shadow: inset 0 -3px 0 var(--hilite); }
+  .stop { background: linear-gradient(100deg, var(--red), #bf3149); }
   .row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px; }
+  .row button { background: linear-gradient(100deg, #10306a, var(--card)); border-bottom: 2px solid var(--accent); }
   .danger { background: var(--red); }
-  .meta { color: var(--muted); font-size: 12px; text-align: center; margin-top: 10px; }
-  .card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 16px; }
-  .card h2 { font-size: 16px; margin: 0 0 6px; }
-  .card p { color: var(--muted); margin: 0; }
-  #toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%) translateY(20px); opacity: 0;
-    background: var(--card); border: 1px solid var(--border); padding: 10px 16px; border-radius: 12px;
-    transition: .25s; pointer-events: none; font-size: 14px; max-width: 90vw; text-align: center; }
+  .meta { color: var(--muted); font-size: 14px; text-align: center; margin-top: 10px; font-style: italic; }
+  .card { background: rgba(11,31,69,.92); padding: 16px 22px; }
+  .card h2 { font-size: 22px; font-style: italic; text-transform: uppercase; color: var(--hilite); margin: 0 0 6px; }
+  .card p { color: var(--muted); margin: 0; font-size: 16px; }
+  #toast { position: fixed; z-index: 5; left: 50%; bottom: 24px; transform: translateX(-50%) translateY(20px); opacity: 0;
+    background: var(--accent); color: #fff; font-weight: 800; font-style: italic; padding: 10px 22px; transition: .25s;
+    pointer-events: none; font-size: 16px; max-width: 90vw; text-align: center;
+    clip-path: polygon(10px 0, 100% 0, calc(100% - 10px) 100%, 0 100%); }
   #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 </style>
 </head>
 <body>
+<div class="rays"></div>
+<div class="waves" aria-hidden="true">
+  <svg viewBox="0 0 1200 90" preserveAspectRatio="none"><path fill="rgba(94,224,255,.10)" d="M0 40 Q75 20 150 40 T300 40 T450 40 T600 40 T750 40 T900 40 T1050 40 T1200 40 V90 H0Z"/></svg>
+  <svg viewBox="0 0 1200 90" preserveAspectRatio="none"><path fill="rgba(26,155,224,.18)" d="M0 55 Q100 35 200 55 T400 55 T600 55 T800 55 T1000 55 T1200 55 V90 H0Z"/></svg>
+</div>
+<div class="bubble" style="left:12%;width:10px;height:10px;animation-duration:13s"></div>
+<div class="bubble" style="left:38%;width:6px;height:6px;animation-duration:17s;animation-delay:-6s"></div>
+<div class="bubble" style="left:63%;width:14px;height:14px;animation-duration:15s;animation-delay:-3s"></div>
+<div class="bubble" style="left:84%;width:8px;height:8px;animation-duration:19s;animation-delay:-11s"></div>
 <main>
   <header>
-    <div class="logo">🎣</div>
-    <div>
-      <h1>GPO Fishing Macro</h1>
-      <div id="pill" class="pill away">Подключение…</div>
+    <div class="title">
+      <div class="gpo">GPO</div>
+      <div class="sub"><span>Fishing</span>Macro</div>
     </div>
+    <div id="pill" class="pill away">Подключение…</div>
   </header>
 
-  <div id="setup" class="card" hidden>
+  <div id="setup" class="card slant" hidden>
     <h2>Нет ссылки на макрос</h2>
     <p>Откройте панель кнопкой «Панель» в чате с ботом или нажмите в макросе
       «Send panel to Telegram» (Literally Everything Else → Phone Alarm).</p>
   </div>
 
   <div id="app" hidden>
-    <div id="alarm" class="alarm">
-      <b>🚨 Тревога</b>
+    <div id="alarm" class="alarm slant">
+      <b>🚨 Тревога!</b>
       <p id="alarmText"></p>
       <button class="danger" data-cmd="alarm_off">Сбросить тревогу</button>
     </div>
 
     <div class="grid">
-      <div class="stat"><b id="catches">–</b><span>Поймано</span></div>
-      <div class="stat"><b id="casts">–</b><span>Забросов</span></div>
-      <div class="stat"><b id="runtime">–</b><span>Время</span></div>
-      <div class="stat"><b id="rate">–</b><span>Рыбы в час</span></div>
+      <div class="stat slant"><b id="catches">–</b><span>Поймано</span></div>
+      <div class="stat slant"><b id="casts">–</b><span>Забросов</span></div>
+      <div class="stat slant"><b id="runtime">–</b><span>Время</span></div>
+      <div class="stat slant"><b id="rate">–</b><span>Рыбы в час</span></div>
     </div>
 
     <button id="toggle" class="big start" data-cmd="start">▶ Старт</button>
@@ -96,7 +148,7 @@
   if (tg) {
     tg.ready();
     tg.expand();
-    try { tg.setHeaderColor("#0f1419"); tg.setBackgroundColor("#0f1419"); } catch (e) {}
+    try { tg.setHeaderColor("#020b1f"); tg.setBackgroundColor("#06122b"); } catch (e) {}
   }
   const $ = id => document.getElementById(id);
   const hash = new URLSearchParams(location.hash.slice(1));
