@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <title>GPO Fishing Macro</title>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
+<script src="vendor/mqtt.min.js?v=5.15.1"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:ital,wght@0,600;1,600;1,800&display=swap" rel="stylesheet">
@@ -194,7 +195,49 @@
   // Лимит бесплатного ntfy.sh ~250 сообщений в сутки, поэтому ПК шлёт статус только открытой панели:
   // панель раз в 30 с пишет ему «ping». Через 15 минут без касаний пинги на паузе — бережём лимит.
   const PING_EVERY = 30, WAIT_REPLY = 15, PAUSE_AFTER = 15 * 60;
-  let lastPing = 0, activeSince = Date.now() / 1000, paused = false, netError = false;
+  const pageStart = Date.now() / 1000;
+  let lastPing = 0, activeSince = pageStart, paused = false, netError = false;
+
+  // Основной канал — публичный MQTT-брокер: лимита сообщений нет, последний статус хранится на брокере.
+  // Топик — хэш секрета, статус и команды подписаны HMAC секретом (брокер публичный).
+  const mqttUrl = hash.get("m") || "";
+  let mq = null, mqOk = false, hmacKey = null, mqBase = null;
+  const hex = buf => Array.from(new Uint8Array(buf), b => b.toString(16).padStart(2, "0")).join("");
+  const enc = new TextEncoder();
+  async function hmacHex(text) { return hex(await crypto.subtle.sign("HMAC", hmacKey, enc.encode(text))); }
+
+  async function mqSend(cmd) {
+    const t = Date.now(), n = hex(crypto.getRandomValues(new Uint8Array(8)));
+    const h = await hmacHex(`${cmd}|${t}|${n}`);
+    mq.publish(mqBase + "/c", JSON.stringify({ c: cmd, t, n, h }), { qos: 1 });
+  }
+
+  async function startMqtt() {
+    if (!mqttUrl || !window.mqtt || !window.crypto || !crypto.subtle) return;
+    try {
+      hmacKey = await crypto.subtle.importKey("raw", enc.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+      mqBase = "gpo/" + hex(await crypto.subtle.digest("SHA-256", enc.encode("gpo-topic:" + secret))).slice(0, 40);
+    } catch (e) { return; }
+    mq = mqtt.connect(mqttUrl, { clientId: "gpo-tg-" + hex(crypto.getRandomValues(new Uint8Array(6))),
+                                  reconnectPeriod: 3000, connectTimeout: 10000, clean: true });
+    mq.on("connect", () => {
+      mqOk = true; netError = false;
+      mq.subscribe(mqBase + "/s", { qos: 1 });
+      mqSend("ping").catch(() => {});   // ПК сразу пришлёт свежий статус
+      render();
+    });
+    mq.on("close", () => { if (mqOk) { mqOk = false; render(); } });
+    mq.on("message", async (topic, payload, packet) => {
+      try {
+        const m = JSON.parse(new TextDecoder().decode(payload));
+        if ((await hmacHex(m.d)) !== m.h) return;          // не от нашего ПК
+        const s = JSON.parse(m.d);
+        // Живое сообщение — время по часам телефона (часы ПК могут спешить); сохранённое на брокере — по ПК
+        if (!packet.retain) s.ts = Date.now() / 1000;
+        if (!status || s.ts >= status.ts) { status = s; render(); }
+      } catch (e) {}
+    });
+  }
 
   let status = null;
   let fetched = false;
@@ -217,7 +260,7 @@
     const now = Date.now() / 1000;
     const online = status && now - status.ts < OFFLINE_AFTER;
     const pill = $("pill");
-    const waiting = !paused && now - lastPing < WAIT_REPLY;
+    const waiting = !paused && (now - lastPing < WAIT_REPLY || now - pageStart < WAIT_REPLY);
     if (!status) {
       const away = fetched && !waiting;
       pill.className = "pill away"; pill.textContent = away ? "ПК не в сети" : "Подключение…";
@@ -306,6 +349,12 @@
   async function send(cmd) {
     if (tg && tg.HapticFeedback) tg.HapticFeedback.impactOccurred("medium");
     try {
+      if (mqOk) {
+        await mqSend(cmd);
+        toast(cmd === "shot" ? "Скриншот придёт в чат с ботом"
+          : cmd === "catches" ? "Список улова придёт в чат с ботом" : "Команда отправлена");
+        return;
+      }
       const r = await fetch(`${server}/${cmdTopic}`, { method: "POST", body: cmd });
       if (!r.ok) throw new Error(r.status);
       toast(cmd === "shot" ? "Скриншот придёт в чат с ботом"
@@ -318,6 +367,7 @@
   async function ping() {
     const now = Date.now() / 1000;
     if (document.hidden) return;
+    if (mqOk) { paused = false; return; }   // по MQTT статус идёт сам, лимита нет
     if (now - activeSince > PAUSE_AFTER) { paused = true; render(); return; }
     lastPing = now;
     try {
@@ -336,7 +386,7 @@
   document.addEventListener("pointerdown", wake);
   document.addEventListener("visibilitychange", () => { if (!document.hidden) { wake(); ping(); } });
   setInterval(ping, PING_EVERY * 1000);
-  ping();
+  startMqtt().finally(() => setTimeout(ping, mqttUrl ? 4000 : 0));   // ntfy — если брокер не ответил
 
   document.addEventListener("click", e => {
     const b = e.target.closest("button[data-cmd]");
