@@ -283,6 +283,9 @@
     if (!msg || msg.event !== "message") return;
     try {
       const s = JSON.parse(msg.message);
+      // Время берём с сервера ntfy, а не с часов ПК: если часы ПК спешат или отстают,
+      // панель иначе решала бы, что ПК «не в сети»
+      if (msg.time) s.ts = msg.time;
       if (!status || s.ts >= status.ts) { status = s; render(); }
     } catch (e) {}
   }
