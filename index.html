@@ -190,7 +190,11 @@
   $("app").hidden = false;
   const statusTopic = `gpo-${secret}-status`;
   const cmdTopic = `gpo-${secret}-cmd`;
-  const OFFLINE_AFTER = 75; // ПК шлёт статус минимум раз в 30 с
+  const OFFLINE_AFTER = 75; // пока панель открыта, ПК шлёт статус раз в 15–30 с
+  // Лимит бесплатного ntfy.sh ~250 сообщений в сутки, поэтому ПК шлёт статус только открытой панели:
+  // панель раз в 30 с пишет ему «ping». Через 15 минут без касаний пинги на паузе — бережём лимит.
+  const PING_EVERY = 30, WAIT_REPLY = 15, PAUSE_AFTER = 15 * 60;
+  let lastPing = 0, activeSince = Date.now() / 1000, paused = false, netError = false;
 
   let status = null;
   let fetched = false;
@@ -213,9 +217,15 @@
     const now = Date.now() / 1000;
     const online = status && now - status.ts < OFFLINE_AFTER;
     const pill = $("pill");
+    const waiting = !paused && now - lastPing < WAIT_REPLY;
     if (!status) {
-      pill.className = "pill away"; pill.textContent = fetched ? "ПК не в сети" : "Подключение…";
-      $("meta").textContent = fetched ? "Запустите макрос на ПК — статус появится сам" : "Ждём статус от ПК…";
+      const away = fetched && !waiting;
+      pill.className = "pill away"; pill.textContent = away ? "ПК не в сети" : "Подключение…";
+      $("meta").textContent = netError ? "Нет связи с ntfy.sh — проверьте интернет или VPN"
+        : paused ? "Обновление на паузе — коснитесь экрана"
+        : away ? "Запустите макрос на ПК — статус появится сам" : "Ждём статус от ПК…";
+    } else if (!online && waiting) {
+      pill.className = "pill away"; pill.textContent = "Подключение…";
     } else if (!online) {
       pill.className = "pill away"; pill.textContent = "ПК не в сети";
     } else if (status.running) {
@@ -276,11 +286,14 @@
     $("alarm").classList.toggle("show", !!status.alarm);
     $("alarmText").textContent = status.alarm || "";
     const ago = Math.max(0, Math.round(now - status.ts));
-    $("meta").textContent = online ? `Обновлено ${ago} с назад` : `Последний статус ${fmtTime(ago)} назад`;
+    $("meta").textContent = netError ? "Нет связи с ntfy.sh — проверьте интернет или VPN"
+      : paused ? `Обновление на паузе — коснитесь экрана · статус ${fmtTime(ago)} назад`
+      : online ? `Обновлено ${ago} с назад` : `Последний статус ${fmtTime(ago)} назад`;
   }
 
   function accept(msg) {
     if (!msg || msg.event !== "message") return;
+    netError = false;
     try {
       const s = JSON.parse(msg.message);
       // Время берём с сервера ntfy, а не с часов ПК: если часы ПК спешат или отстают,
@@ -302,6 +315,29 @@
     }
   }
 
+  async function ping() {
+    const now = Date.now() / 1000;
+    if (document.hidden) return;
+    if (now - activeSince > PAUSE_AFTER) { paused = true; render(); return; }
+    lastPing = now;
+    try {
+      const r = await fetch(`${server}/${cmdTopic}`, { method: "POST", body: "ping" });
+      netError = !r.ok && r.status !== 429;
+    } catch (e) {
+      netError = true;
+    }
+    render();
+  }
+
+  function wake() {
+    activeSince = Date.now() / 1000;
+    if (paused) { paused = false; ping(); }
+  }
+  document.addEventListener("pointerdown", wake);
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) { wake(); ping(); } });
+  setInterval(ping, PING_EVERY * 1000);
+  ping();
+
   document.addEventListener("click", e => {
     const b = e.target.closest("button[data-cmd]");
     if (!b || b.disabled) return;
@@ -316,7 +352,7 @@
   fetch(`${server}/${statusTopic}/json?poll=1&since=2m`)
     .then(r => r.text())
     .then(t => t.trim().split("\n").filter(Boolean).forEach(l => { try { accept(JSON.parse(l)); } catch (e) {} }))
-    .catch(() => {})
+    .catch(() => { netError = true; })
     .finally(() => { fetched = true; render(); });
 
   function listen() {
