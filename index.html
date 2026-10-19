@@ -162,7 +162,7 @@
     </div>
     <div class="fish slant">
       <h3>🐟 Улов</h3>
-      <ol id="fishList"><li class="empty">Пока ничего — или журнал улова выключен в макросе</li></ol>
+      <ol id="fishList"><li class="empty">Пока ничего не поймано</li></ol>
       <button data-cmd="catches">Список с иконками в чат</button>
     </div>
     <div class="meta" id="meta">Ждём статус от ПК…</div>
@@ -247,7 +247,9 @@
     if (!fish.length) {
       const li = document.createElement("li");
       li.className = "empty";
-      li.textContent = "Пока ничего — или журнал улова выключен в макросе";
+      li.textContent = status.fish_log === false
+        ? "Журнал улова выключен — включите в макросе: Рыбалка → Журнал улова"
+        : "Пока ничего не поймано";
       list.append(li);
     }
     for (const f of fish) {
