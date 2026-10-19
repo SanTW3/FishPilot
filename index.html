@@ -107,6 +107,7 @@
   .fish li b { color: var(--hilite); font-style: italic; }
   .fish .empty { color: var(--muted); font-style: italic; }
   .meta { color: var(--muted); font-size: 14px; text-align: center; margin-top: 10px; font-style: italic; }
+  .diag { color: var(--muted); opacity: .6; font-size: 11px; text-align: center; margin-top: 4px; word-break: break-word; }
   .card { background: rgba(11,31,69,.92); padding: 16px 22px; }
   .card h2 { font-size: 22px; font-style: italic; text-transform: uppercase; color: var(--hilite); margin: 0 0 6px; }
   .card p { color: var(--muted); margin: 0; font-size: 16px; }
@@ -167,6 +168,7 @@
       <button data-cmd="catches">Список с иконками в чат</button>
     </div>
     <div class="meta" id="meta">Ждём статус от ПК…</div>
+    <div class="diag" id="diag"></div>
   </div>
 </main>
 <div id="toast"></div>
@@ -200,43 +202,63 @@
 
   // Основной канал — публичный MQTT-брокер: лимита сообщений нет, последний статус хранится на брокере.
   // Топик — хэш секрета, статус и команды подписаны HMAC секретом (брокер публичный).
-  const mqttUrl = hash.get("m") || "";
-  let mq = null, mqOk = false, hmacKey = null, mqBase = null;
+  // Старые ссылки без «m» — брокеры по умолчанию (те же, что у макроса)
+  const MQTT_DEFAULT = "wss://broker.emqx.io:8084/mqtt wss://broker.hivemq.com:8884/mqtt";
+  const mqttUrls = (hash.get("m") || MQTT_DEFAULT).split(/[\s,]+/).filter(Boolean);
+  const links = [];   // {host, client, ok, err}
+  let mqOk = false, hmacKey = null, mqBase = null, mqNote = "";
   const hex = buf => Array.from(new Uint8Array(buf), b => b.toString(16).padStart(2, "0")).join("");
   const enc = new TextEncoder();
   async function hmacHex(text) { return hex(await crypto.subtle.sign("HMAC", hmacKey, enc.encode(text))); }
 
-  async function mqSend(cmd) {
+  function mqState() {
+    mqOk = links.some(l => l.ok);
+    $("diag").textContent = mqNote || links.map(l => `${l.host}: ${l.ok ? "✓" : l.err ? "✗ " + l.err : "…"}`).join(" · ");
+    render();
+  }
+
+  async function mqSend(cmd, only) {
     const t = Date.now(), n = hex(crypto.getRandomValues(new Uint8Array(8)));
-    const h = await hmacHex(`${cmd}|${t}|${n}`);
-    mq.publish(mqBase + "/c", JSON.stringify({ c: cmd, t, n, h }), { qos: 1 });
+    const msg = JSON.stringify({ c: cmd, t, n, h: await hmacHex(`${cmd}|${t}|${n}`) });
+    // Одна и та же команда (тот же nonce) во все брокеры — ПК выполнит её один раз
+    for (const l of (only ? [only] : links)) if (l.ok) l.client.publish(mqBase + "/c", msg, { qos: 1 });
   }
 
   async function startMqtt() {
-    if (!mqttUrl || !window.mqtt || !window.crypto || !crypto.subtle) return;
+    if (!mqttUrls.length) return;
+    if (!window.mqtt) { mqNote = "MQTT: не загрузилась библиотека"; mqState(); return; }
+    if (!window.crypto || !crypto.subtle) { mqNote = "MQTT: нет WebCrypto в этом браузере"; mqState(); return; }
     try {
       hmacKey = await crypto.subtle.importKey("raw", enc.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
       mqBase = "gpo/" + hex(await crypto.subtle.digest("SHA-256", enc.encode("gpo-topic:" + secret))).slice(0, 40);
-    } catch (e) { return; }
-    mq = mqtt.connect(mqttUrl, { clientId: "gpo-tg-" + hex(crypto.getRandomValues(new Uint8Array(6))),
-                                  reconnectPeriod: 3000, connectTimeout: 10000, clean: true });
-    mq.on("connect", () => {
-      mqOk = true; netError = false;
-      mq.subscribe(mqBase + "/s", { qos: 1 });
-      mqSend("ping").catch(() => {});   // ПК сразу пришлёт свежий статус
-      render();
-    });
-    mq.on("close", () => { if (mqOk) { mqOk = false; render(); } });
-    mq.on("message", async (topic, payload, packet) => {
-      try {
-        const m = JSON.parse(new TextDecoder().decode(payload));
-        if ((await hmacHex(m.d)) !== m.h) return;          // не от нашего ПК
-        const s = JSON.parse(m.d);
-        // Живое сообщение — время по часам телефона (часы ПК могут спешить); сохранённое на брокере — по ПК
-        if (!packet.retain) s.ts = Date.now() / 1000;
-        if (!status || s.ts >= status.ts) { status = s; render(); }
-      } catch (e) {}
-    });
+    } catch (e) { mqNote = "MQTT: " + e.message; mqState(); return; }
+    for (const url of mqttUrls) {
+      let host = url;
+      try { host = new URL(url).hostname; } catch (e) {}
+      const l = { host, ok: false, err: "" };
+      links.push(l);
+      l.client = mqtt.connect(url, { clientId: "gpo-tg-" + hex(crypto.getRandomValues(new Uint8Array(6))),
+                                     reconnectPeriod: 4000, connectTimeout: 10000, clean: true });
+      l.client.on("connect", () => {
+        l.ok = true; l.err = ""; netError = false;
+        l.client.subscribe(mqBase + "/s", { qos: 1 });
+        mqSend("ping", l).catch(() => {});   // ПК сразу пришлёт свежий статус
+        mqState();
+      });
+      l.client.on("error", e => { l.err = (e && e.message) || "ошибка"; mqState(); });
+      l.client.on("close", () => { if (l.ok || !l.err) { l.ok = false; l.err = l.err || "нет соединения"; mqState(); } });
+      l.client.on("message", async (topic, payload, packet) => {
+        try {
+          const m = JSON.parse(new TextDecoder().decode(payload));
+          if ((await hmacHex(m.d)) !== m.h) return;          // не от нашего ПК
+          const s = JSON.parse(m.d);
+          // Живое сообщение — время по часам телефона (часы ПК могут спешить); сохранённое на брокере — по ПК
+          if (!packet.retain) s.ts = Date.now() / 1000;
+          if (!status || s.ts >= status.ts) { status = s; render(); }
+        } catch (e) {}
+      });
+    }
+    mqState();
   }
 
   let status = null;
@@ -386,7 +408,7 @@
   document.addEventListener("pointerdown", wake);
   document.addEventListener("visibilitychange", () => { if (!document.hidden) { wake(); ping(); } });
   setInterval(ping, PING_EVERY * 1000);
-  startMqtt().finally(() => setTimeout(ping, mqttUrl ? 4000 : 0));   // ntfy — если брокер не ответил
+  startMqtt().finally(() => setTimeout(ping, mqttUrls.length ? 4000 : 0));   // ntfy — если брокер не ответил
 
   document.addEventListener("click", e => {
     const b = e.target.closest("button[data-cmd]");
