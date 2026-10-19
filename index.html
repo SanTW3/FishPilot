@@ -165,7 +165,10 @@
     <div class="fish slant">
       <h3>🐟 Улов</h3>
       <ol id="fishList"><li class="empty">Пока ничего не поймано</li></ol>
-      <button data-cmd="catches">Список с иконками в чат</button>
+      <div class="row">
+        <button data-cmd="catches">Список в чат</button>
+        <button data-cmd="reset_catches">🗑 Очистить</button>
+      </div>
     </div>
     <div class="meta" id="meta">Ждём статус от ПК…</div>
     <div class="diag" id="diag"></div>
@@ -382,13 +385,15 @@
       if (mqOk) {
         await mqSend(cmd);
         toast(cmd === "shot" ? "Скриншот придёт в чат с ботом"
-          : cmd === "catches" ? "Список улова придёт в чат с ботом" : "Команда отправлена");
+          : cmd === "catches" ? "Список улова придёт в чат с ботом"
+        : cmd === "reset_catches" ? "Список улова очищен" : "Команда отправлена");
         return;
       }
       const r = await fetch(`${server}/${cmdTopic}`, { method: "POST", body: cmd });
       if (!r.ok) throw new Error(r.status);
       toast(cmd === "shot" ? "Скриншот придёт в чат с ботом"
-        : cmd === "catches" ? "Список улова придёт в чат с ботом" : "Команда отправлена");
+        : cmd === "catches" ? "Список улова придёт в чат с ботом"
+        : cmd === "reset_catches" ? "Список улова очищен" : "Команда отправлена");
     } catch (e) {
       toast("Не удалось отправить: нет сети?");
     }
@@ -423,6 +428,10 @@
     if (!b || b.disabled) return;
     if (b.dataset.cmd === "stop" && tg && tg.showConfirm) {
       tg.showConfirm("Остановить макрос?", ok => ok && send("stop"));
+    } else if (b.dataset.cmd === "reset_catches") {
+      const ask = "Очистить список улова?";
+      if (tg && tg.showConfirm) tg.showConfirm(ask, ok => ok && send("reset_catches"));
+      else if (confirm(ask)) send("reset_catches");
     } else {
       send(b.dataset.cmd);
     }
