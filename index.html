@@ -203,7 +203,8 @@
   // Основной канал — публичный MQTT-брокер: лимита сообщений нет, последний статус хранится на брокере.
   // Топик — хэш секрета, статус и команды подписаны HMAC секретом (брокер публичный).
   // Старые ссылки без «m» — брокеры по умолчанию (те же, что у макроса)
-  const MQTT_DEFAULT = "wss://broker.emqx.io:8084/mqtt wss://broker.hivemq.com:8884/mqtt";
+  const MQTT_DEFAULT = "wss://broker.emqx.io:8084/mqtt wss://broker.hivemq.com:8884/mqtt " +
+    "wss://mqtt.eclipseprojects.io:443/mqtt wss://public:public@public.cloud.shiftr.io:443/";
   const mqttUrls = (hash.get("m") || MQTT_DEFAULT).split(/[\s,]+/).filter(Boolean);
   const links = [];   // {host, client, ok, err}
   let mqOk = false, hmacKey = null, mqBase = null, mqNote = "";
@@ -233,12 +234,19 @@
       mqBase = "gpo/" + hex(await crypto.subtle.digest("SHA-256", enc.encode("gpo-topic:" + secret))).slice(0, 40);
     } catch (e) { mqNote = "MQTT: " + e.message; mqState(); return; }
     for (const url of mqttUrls) {
-      let host = url;
-      try { host = new URL(url).hostname; } catch (e) {}
+      let host = url, plain = url;
+      const opts = { clientId: "gpo-tg-" + hex(crypto.getRandomValues(new Uint8Array(6))),
+                     reconnectPeriod: 4000, connectTimeout: 10000, clean: true };
+      try {
+        const u = new URL(url);
+        host = u.hostname.replace(/^(broker|mqtt|public)\./, "") + ":" + (u.port || "443");
+        if (u.username) { opts.username = decodeURIComponent(u.username); opts.password = decodeURIComponent(u.password); }
+        u.username = ""; u.password = "";
+        plain = u.toString();
+      } catch (e) {}
       const l = { host, ok: false, err: "" };
       links.push(l);
-      l.client = mqtt.connect(url, { clientId: "gpo-tg-" + hex(crypto.getRandomValues(new Uint8Array(6))),
-                                     reconnectPeriod: 4000, connectTimeout: 10000, clean: true });
+      l.client = mqtt.connect(plain, opts);
       l.client.on("connect", () => {
         l.ok = true; l.err = ""; netError = false;
         l.client.subscribe(mqBase + "/s", { qos: 1 });
