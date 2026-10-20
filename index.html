@@ -265,7 +265,7 @@
           const s = JSON.parse(m.d);
           // Живое сообщение — время по часам телефона (часы ПК могут спешить); сохранённое на брокере — по ПК
           if (!packet.retain) s.ts = Date.now() / 1000;
-          if (!status || s.ts >= status.ts) { status = s; render(); }
+          setStatus(s);
         } catch (e) {}
       });
     }
@@ -274,6 +274,20 @@
 
   let status = null;
   let fetched = false;
+  // Время старта по часам телефона. Один статус приходит несколькими путями с разной задержкой —
+  // если пересчитывать время от каждого, оно скачет вперёд-назад. Поправляем, только если разошлось > 5 с
+  let runStart = null;
+
+  function setStatus(s) {
+    if (status && s.ts < status.ts) return;           // устаревший статус
+    if (!s.running) runStart = null;
+    else {
+      const est = s.ts - s.runtime;
+      if (runStart === null || Math.abs(est - runStart) > 5) runStart = est;
+    }
+    status = s;
+    render();
+  }
   let toastTimer = null;
 
   function toast(text) {
@@ -312,7 +326,7 @@
     document.querySelectorAll("button").forEach(b => b.disabled = !online);
     if (!status) return;
 
-    const runtime = status.running ? status.runtime + (now - status.ts) : status.runtime;
+    const runtime = status.running && runStart !== null ? now - runStart : status.runtime;
     $("catches").textContent = status.catches;
     $("casts").textContent = status.casts;
     $("runtime").textContent = fmtTime(runtime);
@@ -375,7 +389,7 @@
       // Время берём с сервера ntfy, а не с часов ПК: если часы ПК спешат или отстают,
       // панель иначе решала бы, что ПК «не в сети»
       if (msg.time) s.ts = msg.time;
-      if (!status || s.ts >= status.ts) { status = s; render(); }
+      setStatus(s);
     } catch (e) {}
   }
 
