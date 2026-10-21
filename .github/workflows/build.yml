@@ -1,0 +1,112 @@
+name: Build FishPilot
+
+# Сборка и тесты — на каждый push (без права записи в репозиторий).
+# Релиз для пользователей — ТОЛЬКО по тегу vX.Y.Z или ручному запуску (Actions → Run workflow → publish):
+# отдельная задача publish, у которой одной есть право писать релизы.
+on:
+  push:
+    branches:
+      - "**"
+    paths-ignore:            # мини-приложение (GitHub Pages) и тексты сборку не трогают
+      - "index.html"
+      - "fish/**"
+      - "vendor/**"
+      - "**.md"
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: "Опубликовать релиз для пользователей"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: python -m pip install -r requirements.txt pyinstaller==6.22.3 pytest pip-licenses==5.0.0
+      - name: Test
+        timeout-minutes: 10
+        run: python -m pytest -q -rs -s tests
+      - name: Version
+        id: version
+        shell: pwsh
+        run: |
+          $ver = python -c "import macro; print(macro.__version__)"
+          "version=$ver" >> $env:GITHUB_OUTPUT
+      - name: Version resource and licenses
+        run: |
+          python tools/build_meta.py version build\version.txt
+          python tools/build_meta.py licenses build\THIRD_PARTY_LICENSES.txt
+      # Папка (FishPilot.exe + _internal): быстрее запускается и реже пугает антивирусы, чем один exe
+      - name: Build
+        run: >
+          python -m PyInstaller --noconfirm --onedir --windowed --noupx --name FishPilot
+          --version-file build\version.txt --icon assets\icon.ico --add-data "assets;assets"
+          --collect-data customtkinter --collect-all winrt gpo_macro.py
+      - name: Self-test (Windows OCR inside the build)
+        shell: pwsh
+        run: |
+          $p = Start-Process -FilePath dist\FishPilot\FishPilot.exe -ArgumentList "--selftest" -Wait -PassThru
+          Get-Content dist\FishPilot\selftest.txt
+          if ($p.ExitCode -ne 0) { throw "selftest failed" }
+          Remove-Item dist\FishPilot\selftest.txt
+      - name: Zip
+        shell: pwsh
+        run: |
+          Copy-Item LICENSE dist\FishPilot\LICENSE.txt
+          Copy-Item build\THIRD_PARTY_LICENSES.txt dist\FishPilot\
+          Copy-Item README.md dist\FishPilot\README.md
+          Compress-Archive -Path dist\FishPilot -DestinationPath dist\FishPilot-win64.zip -CompressionLevel Optimal
+      - uses: actions/upload-artifact@v4
+        with:
+          name: FishPilot
+          path: dist/FishPilot-win64.zip
+
+  # Релиз vX.Y.Z, помеченный latest — программа проверяет releases/latest.
+  # Сначала черновик с файлом, потом публикация: программа не увидит версию раньше файла.
+  publish:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.publish)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      VER: ${{ needs.build.outputs.version }}
+    steps:
+      - name: Tag matches version
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          test "${GITHUB_REF_NAME}" = "v$VER" || { echo "Тег ${GITHUB_REF_NAME} не совпадает с версией $VER"; exit 1; }
+      - name: Version not released yet
+        run: |
+          if gh release view "v$VER" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Релиз v$VER уже есть — поднимите __version__ в macro/__init__.py"; exit 1
+          fi
+      - uses: actions/download-artifact@v4
+        with:
+          name: FishPilot
+          path: dist
+      - name: Publish release
+        run: |
+          zsha=$(sha256sum dist/FishPilot-win64.zip | cut -d' ' -f1)
+          notes=$(printf '%s\n\n%s\n\nversion: %s\nzip_sha256: %s\ncommit: %s' \
+            "**Download FishPilot-win64.zip**, unpack it and run FishPilot.exe. Installed copies update themselves." \
+            "Free, MIT license. Not affiliated with Roblox or Grand Piece Online; automating the game may break its rules — use at your own risk." \
+            "$VER" "$zsha" "$GITHUB_SHA")
+          gh release create "v$VER" dist/FishPilot-win64.zip --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            --title "FishPilot $VER" --notes "$notes" --draft
+          gh release edit "v$VER" --repo "$GITHUB_REPOSITORY" --draft=false --latest
