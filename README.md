@@ -1,24 +1,29 @@
-# GPO Fishing Macro — мини-приложение Telegram
+# FishPilot — Telegram mini app
 
-Панель управления макросом [GPO Fishing Macro](https://github.com/SanTW3/Mediavert/tree/main/gpo-fishing-macro)
-прямо в Telegram: статистика, старт/стоп, экран вкл/выкл, скриншот, сброс тревоги.
+Control panel for [FishPilot](https://github.com/SanTW3/Mediavert/tree/main/gpo-fishing-macro) (a fishing
+assistant for Grand Piece Online) right inside Telegram: live stats, start/stop, screen on/off, screenshot,
+catch list, alarm reset. Languages: English, Русский, Español, Português (BR).
 
-Сайт: https://santw3.github.io/gpo-macro/ (GitHub Pages, ветка `main`, корень).
+Site: https://santw3.github.io/gpo-macro/ (GitHub Pages, branch `main`, root).
 
-## Как это работает
+> Not affiliated with Roblox or Grand Piece Online. Fish icons and names belong to their respective owners.
 
-Своего сервера нет. Макрос на ПК и эта страница общаются через [ntfy](https://ntfy.sh) по двум топикам
-с секретным именем:
+## How it works
 
-- `gpo-<секрет>-status` — ПК публикует статус (JSON), страница его слушает;
-- `gpo-<секрет>-cmd` — страница шлёт команды (`start`, `stop`, `screen_on`, `screen_off`, `shot`, `alarm_off`),
-  ПК их выполняет.
+There is no server of its own. The FishPilot app on the PC and this page talk through public MQTT brokers
+(over WebSocket, `vendor/mqtt.min.js`) with [ntfy](https://ntfy.sh) as a fallback.
 
-Секрет и адрес ntfy передаются во фрагменте ссылки (`#t=…&s=…`). Фрагмент не уходит на сервер GitHub,
-а ссылку бот присылает только в ваш личный чат. Кто знает секрет, тот видит статус и управляет макросом.
-Если ссылка утекла, нажмите в макросе **New secret link**.
+- Topic names are a hash of a secret, so they can't be guessed.
+- Status messages and commands are signed with the secret (HMAC-SHA256) and carry a time and a nonce:
+  without the link nobody can control the macro, and an intercepted command can't be replayed.
+- The secret travels in the link fragment (`#…`), which is never sent to GitHub. The bot sends the link only
+  to your own chat. If the link leaks, press **New secret link** in FishPilot.
 
-## Включение GitHub Pages (один раз)
+## Enabling GitHub Pages (once)
 
-Settings → Pages → Build and deployment → Source: **Deploy from a branch**,
-Branch: **main**, папка **/ (root)** → Save.
+Settings → Pages → Build and deployment → Source: **Deploy from a branch**, Branch: **main**, folder
+**/ (root)** → Save.
+
+## License
+
+[MIT](LICENSE). Includes [MQTT.js](https://github.com/mqttjs/MQTT.js) (MIT).

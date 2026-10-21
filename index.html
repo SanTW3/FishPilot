@@ -309,8 +309,8 @@
     return;
   }
   $("app").hidden = false;
-  const statusTopic = `gpo-${secret}-status`;
-  const cmdTopic = `gpo-${secret}-cmd`;
+  // Имена тем ntfy и MQTT — хэши секрета (сам секрет по сети не ходит), статус и команды подписаны HMAC
+  let statusTopic = null, cmdTopic = null;
   const OFFLINE_AFTER = 75; // пока панель открыта, ПК шлёт статус раз в 15–30 с
   // Лимит бесплатного ntfy.sh ~250 сообщений в сутки, поэтому ПК шлёт статус только открытой панели:
   // панель раз в 30 с пишет ему «ping». Через 15 минут без касаний пинги на паузе — бережём лимит.
@@ -336,9 +336,30 @@
     render();
   }
 
-  async function mqSend(cmd, only) {
+  async function initKeys() {
+    if (!window.crypto || !crypto.subtle) throw new Error(t("MQTT: нет WebCrypto в этом браузере"));
+    hmacKey = await crypto.subtle.importKey("raw", enc.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+    mqBase = "gpo/" + hex(await crypto.subtle.digest("SHA-256", enc.encode("gpo-topic:" + secret))).slice(0, 40);
+    const h = hex(await crypto.subtle.digest("SHA-256", enc.encode("gpo-ntfy:" + secret))).slice(0, 32);
+    statusTopic = `gpo-${h}-s`;
+    cmdTopic = `gpo-${h}-c`;
+  }
+
+  // Подписанная команда: без секрета не подделать, с одноразовым n — не повторить
+  async function signed(cmd) {
     const t = Date.now(), n = hex(crypto.getRandomValues(new Uint8Array(8)));
-    const msg = JSON.stringify({ c: cmd, t, n, h: await hmacHex(`${cmd}|${t}|${n}`) });
+    return JSON.stringify({ c: cmd, t, n, h: await hmacHex(`${cmd}|${t}|${n}`) });
+  }
+
+  // Статус от ПК: {d: json, h: hmac(d)}; чужой или подделанный — null
+  async function verified(text) {
+    const m = JSON.parse(text);
+    if (!m || typeof m.d !== "string" || (await hmacHex(m.d)) !== m.h) return null;
+    return JSON.parse(m.d);
+  }
+
+  async function mqSend(cmd, only) {
+    const msg = await signed(cmd);
     // Одна и та же команда (тот же nonce) во все брокеры — ПК выполнит её один раз
     for (const l of (only ? [only] : links)) if (l.ok) l.client.publish(mqBase + "/c", msg, { qos: 1 });
   }
@@ -346,11 +367,6 @@
   async function startMqtt() {
     if (!mqttUrls.length) return;
     if (!window.mqtt) { mqNote = t("MQTT: не загрузилась библиотека"); mqState(); return; }
-    if (!window.crypto || !crypto.subtle) { mqNote = t("MQTT: нет WebCrypto в этом браузере"); mqState(); return; }
-    try {
-      hmacKey = await crypto.subtle.importKey("raw", enc.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
-      mqBase = "gpo/" + hex(await crypto.subtle.digest("SHA-256", enc.encode("gpo-topic:" + secret))).slice(0, 40);
-    } catch (e) { mqNote = "MQTT: " + e.message; mqState(); return; }
     for (const url of mqttUrls) {
       let host = url, plain = url;
       const opts = { clientId: "gpo-tg-" + hex(crypto.getRandomValues(new Uint8Array(6))),
@@ -375,9 +391,8 @@
       l.client.on("close", () => { if (l.ok || !l.err) { l.ok = false; l.err = l.err || t("нет соединения"); mqState(); } });
       l.client.on("message", async (topic, payload, packet) => {
         try {
-          const m = JSON.parse(new TextDecoder().decode(payload));
-          if ((await hmacHex(m.d)) !== m.h) return;          // не от нашего ПК
-          const s = JSON.parse(m.d);
+          const s = await verified(new TextDecoder().decode(payload));
+          if (!s) return;                                     // не от нашего ПК
           // Живое сообщение — время по часам телефона (часы ПК могут спешить); сохранённое на брокере — по ПК
           if (!packet.retain) s.ts = Date.now() / 1000;
           setStatus(s);
@@ -497,11 +512,12 @@
       : online ? t("Обновлено {ago} с назад", {ago}) : t("Последний статус {ago} назад", {ago: fmtTime(ago)});
   }
 
-  function accept(msg) {
+  async function accept(msg) {
     if (!msg || msg.event !== "message") return;
     netError = false;
     try {
-      const s = JSON.parse(msg.message);
+      const s = await verified(msg.message);
+      if (!s) return;                                         // не от нашего ПК
       // Время берём с сервера ntfy, а не с часов ПК: если часы ПК спешат или отстают,
       // панель иначе решала бы, что ПК «не в сети»
       if (msg.time) s.ts = msg.time;
@@ -517,7 +533,7 @@
         toast(sentText(cmd));
         return;
       }
-      const r = await fetch(`${server}/${cmdTopic}`, { method: "POST", body: cmd });
+      const r = await fetch(`${server}/${cmdTopic}`, { method: "POST", body: await signed(cmd) });
       if (!r.ok) throw new Error(r.status);
       toast(sentText(cmd));
     } catch (e) {
@@ -529,10 +545,11 @@
     const now = Date.now() / 1000;
     if (document.hidden) return;
     if (mqOk) { paused = false; return; }   // по MQTT статус идёт сам, лимита нет
+    if (!cmdTopic) return;
     if (now - activeSince > PAUSE_AFTER) { paused = true; render(); return; }
     lastPing = now;
     try {
-      const r = await fetch(`${server}/${cmdTopic}`, { method: "POST", body: "ping" });
+      const r = await fetch(`${server}/${cmdTopic}`, { method: "POST", body: await signed("ping") });
       netError = !r.ok && r.status !== 429;
     } catch (e) {
       netError = true;
@@ -547,7 +564,6 @@
   document.addEventListener("pointerdown", wake);
   document.addEventListener("visibilitychange", () => { if (!document.hidden) { wake(); ping(); } });
   setInterval(ping, PING_EVERY * 1000);
-  startMqtt().finally(() => setTimeout(ping, mqttUrls.length ? 4000 : 0));   // ntfy — если брокер не ответил
 
   $("donate").addEventListener("click", e => {
     if (tg && tg.openLink) { e.preventDefault(); tg.openLink(e.currentTarget.href); }
@@ -567,20 +583,23 @@
     }
   });
 
-  // Последний статус (ПК шлёт его минимум раз в 30 с, так что хватает 2 минут), затем живой поток
-  fetch(`${server}/${statusTopic}/json?poll=1&since=2m`)
-    .then(r => r.text())
-    .then(t => t.trim().split("\n").filter(Boolean).forEach(l => { try { accept(JSON.parse(l)); } catch (e) {} }))
-    .catch(() => { netError = true; })
-    .finally(() => { fetched = true; render(); });
-
   function listen() {
     const es = new EventSource(`${server}/${statusTopic}/sse`);
     es.onmessage = ev => { try { accept(JSON.parse(ev.data)); } catch (e) {} };
     es.onerror = () => { es.close(); setTimeout(listen, 3000); };
   }
-  listen();
+
   setInterval(render, 1000);
+  initKeys().then(() => {
+    startMqtt().finally(() => setTimeout(ping, mqttUrls.length ? 4000 : 0));   // ntfy — если брокер не ответил
+    // Последний статус из ntfy (ПК шлёт его, пока панель открыта), затем живой поток
+    fetch(`${server}/${statusTopic}/json?poll=1&since=2m`)
+      .then(r => r.text())
+      .then(t => t.trim().split("\n").filter(Boolean).forEach(l => { try { accept(JSON.parse(l)); } catch (e) {} }))
+      .catch(() => { netError = true; })
+      .finally(() => { fetched = true; render(); });
+    listen();
+  }).catch(e => { mqNote = String(e.message || e); fetched = true; mqState(); });
 })();
 </script>
 </body>
