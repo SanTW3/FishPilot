@@ -51,6 +51,8 @@
   .title .sub { font-size: 17px; font-weight: 800; line-height: 1.05; }
   .title .sub span { color: var(--hilite); display: block; }
   .title .sub span.plain { color: inherit; }
+  .donate { display: block; text-align: center; margin: 14px auto 4px; color: #ff8fb3; font-size: 13px;
+            font-weight: 700; text-decoration: none; }
   .pill { position: relative; display: inline-block; margin-top: 8px; padding: 2px 12px 2px 10px; font-size: 14px;
     font-weight: 800; font-style: italic; text-transform: uppercase; color: #fff; background: var(--muted);
     clip-path: polygon(6px 0, 100% 0, calc(100% - 6px) 100%, 0 100%); }
@@ -172,6 +174,8 @@
     </div>
     <div class="meta" id="meta">Ждём статус от ПК…</div>
     <div class="diag" id="diag"></div>
+    <a class="donate" id="donate" href="https://www.donationalerts.com/r/etnealy" target="_blank" rel="noopener"
+       data-i18n="❤ Поддержать автора">❤ Поддержать автора</a>
   </div>
 </main>
 <div id="toast"></div>
@@ -216,6 +220,7 @@
       "Список улова очищен": "Catch list cleared", "Команда отправлена": "Command sent",
       "Не удалось отправить: нет сети?": "Couldn't send: no network?",
       "Остановить макрос?": "Stop fishing?", "Очистить список улова?": "Clear the catch list?",
+      "❤ Поддержать автора": "❤ Support the author",
     },
     es: {
       "Автопилот": "Piloto", "рыбалки GPO": "automático de pesca · GPO", "Подключение…": "Conectando…",
@@ -243,6 +248,7 @@
       "Список улова очищен": "Lista de capturas borrada", "Команда отправлена": "Comando enviado",
       "Не удалось отправить: нет сети?": "No se pudo enviar: ¿sin red?",
       "Остановить макрос?": "¿Detener la pesca?", "Очистить список улова?": "¿Borrar la lista de capturas?",
+      "❤ Поддержать автора": "❤ Apoyar al autor",
     },
     pt: {
       "Автопилот": "Piloto", "рыбалки GPO": "automático de pesca · GPO", "Подключение…": "Conectando…",
@@ -270,6 +276,7 @@
       "Список улова очищен": "Lista de capturas limpa", "Команда отправлена": "Comando enviado",
       "Не удалось отправить: нет сети?": "Não foi possível enviar: sem rede?",
       "Остановить макрос?": "Parar a pesca?", "Очистить список улова?": "Limpar a lista de capturas?",
+      "❤ Поддержать автора": "❤ Apoiar o autor",
     },
   };
   const tgLang = (tg && tg.initDataUnsafe && tg.initDataUnsafe.user && tg.initDataUnsafe.user.language_code) || "";
@@ -541,6 +548,10 @@
   document.addEventListener("visibilitychange", () => { if (!document.hidden) { wake(); ping(); } });
   setInterval(ping, PING_EVERY * 1000);
   startMqtt().finally(() => setTimeout(ping, mqttUrls.length ? 4000 : 0));   // ntfy — если брокер не ответил
+
+  $("donate").addEventListener("click", e => {
+    if (tg && tg.openLink) { e.preventDefault(); tg.openLink(e.currentTarget.href); }
+  });
 
   document.addEventListener("click", e => {
     const b = e.target.closest("button[data-cmd]");
