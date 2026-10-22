@@ -1187,6 +1187,15 @@ def test_secrets_are_kept_apart_from_config(tmp_path):
     assert legacy["telegram_token"] == "T" * 10 and legacy["remote_secret"] == "abcdefgh12"
     config.save(legacy, old)
     assert "TTTT" not in open(old, encoding="utf-8").read() and config.load(old)["telegram_token"] == "T" * 10
+    # Старый config.json положили поверх уже запущенной 2.x: пустые секреты из secrets.bin его токены не затирают
+    fresh = str(tmp_path / "fresh" / "config.json")
+    os.makedirs(os.path.dirname(fresh))
+    config.save(config.load(fresh), fresh)
+    with open(fresh, "w", encoding="utf-8") as f:
+        json.dump({"config_version": 6, "telegram_token": "T" * 10, "telegram_chat_id": "42"}, f)
+    restored = config.load(fresh)
+    assert restored["telegram_token"] == "T" * 10 and restored["telegram_chat_id"] == "42"
+    assert restored["remote_secret"]                  # чего нет в config.json — из secrets.bin
 
 
 def test_diagnostics_hide_secrets():

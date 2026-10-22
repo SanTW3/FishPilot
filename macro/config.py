@@ -262,8 +262,11 @@ def load(path=CONFIG_PATH):
         for key, value in data.items():
             if key in cfg:
                 cfg[key] = _clean(key, value)
+    # Сохраняя, программа не пишет секреты в config.json. Если они там есть — файл от старой версии
+    # положили вручную, и его токены важнее secrets.bin (там могли остаться пустые значения нового запуска)
+    in_config = {k for k in SECRET_KEYS if data and str(data.get(k) or "").strip()}
     for key, value in load_secrets(path).items():
-        if key in SECRET_KEYS and isinstance(value, str):
+        if key in SECRET_KEYS and key not in in_config and isinstance(value, str):
             cfg[key] = value
     if not WEBAPP_RE.match(str(cfg.get("webapp_url") or "")):
         cfg["webapp_url"] = DEFAULTS["webapp_url"]
