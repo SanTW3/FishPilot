@@ -41,25 +41,41 @@ def pack_status(secret, status):
 
 
 def unpack_command(secret, payload, seen, now=None, not_before=None):
-    """Команда из подписанного сообщения панели или None (подделка, повтор, старая).
+    """Команда из подписанного сообщения панели или None (подделка, повтор, старая)."""
+    return unpack(secret, payload, seen, now, not_before)[0]
+
+
+def signed_nonce(secret, payload):
+    """Одноразовый номер подписанной команды (без проверок времени и повтора) или None."""
+    try:
+        msg = json.loads(payload)
+        cmd, t, nonce, h = str(msg["c"]), int(msg["t"]), str(msg["n"]), str(msg["h"])
+    except (ValueError, KeyError, TypeError):
+        return None
+    return nonce if hmac.compare_digest(sign(secret, f"{cmd}|{t}|{nonce}"), h) else None
+
+
+def unpack(secret, payload, seen, now=None, not_before=None):
+    """(команда, одноразовый номер) из подписанного сообщения панели или (None, None).
+    Номер ПК возвращает в статусе (ack) — так панель узнаёт, что команда дошла.
     not_before — время запуска программы: команды, отправленные до него, не выполняем (иначе после
     перезапуска можно было бы повторить перехваченную команду, пока она моложе минуты)."""
     try:
         msg = json.loads(payload)
         cmd, t, nonce, h = str(msg["c"]), int(msg["t"]), str(msg["n"]), str(msg["h"])
     except (ValueError, KeyError, TypeError):
-        return None
+        return None, None
     if not hmac.compare_digest(sign(secret, f"{cmd}|{t}|{nonce}"), h):
-        return None
+        return None, None
     now = time.time() if now is None else now
     if abs(now - t / 1000) > COMMAND_MAX_AGE or nonce in seen:
-        return None
+        return None, None
     if not_before is not None and t / 1000 < not_before - 2:
-        return None
+        return None, None
     seen[nonce] = now
     for k in [k for k, v in seen.items() if now - v > 2 * COMMAND_MAX_AGE]:
         del seen[k]
-    return cmd
+    return cmd, nonce
 
 
 def parse_url(url):
@@ -137,9 +153,9 @@ class MqttLink:
 
     def _on_message(self, client, userdata, msg):
         secret = self.cfg.get("remote_secret") or ""
-        cmd = unpack_command(secret, msg.payload, self._seen, not_before=self.not_before)   # _seen общий у всех брокеров
+        cmd, nonce = unpack(secret, msg.payload, self._seen, not_before=self.not_before)   # _seen общий у всех брокеров
         if cmd:
-            self.on_command(cmd)
+            self.on_command(cmd, nonce)
 
     # ---------- для Remote ----------
     def resubscribe(self):

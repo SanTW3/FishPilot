@@ -408,7 +408,8 @@ def test_remote_saves_ntfy_quota(monkeypatch):
     state = {"running": True, "catches": 0}
     cfg = dict(config.DEFAULTS, ntfy_server=f"http://127.0.0.1:{srv.server_port}", remote_secret="S", mqtt_url="",
                **TG)
-    r = remote.Remote(cfg, lambda: dict(state), lambda c: None, log=lambda t: None)
+    ran = []
+    r = remote.Remote(cfg, lambda: dict(state), ran.append, log=lambda t: None)
 
     def settle(n):
         deadline = time.time() + 3
@@ -434,6 +435,20 @@ def test_remote_saves_ntfy_quota(monkeypatch):
         settle(4)
         assert len(posted) == 4 and posted[-1]["running"] is False   # стоп — важное событие
         assert "отправлен" in r.diagnostics()
+        # Команда через ntfy подтверждается сразу (ack с её номером) — панель перестаёт её повторять
+        cmd = json.dumps({"event": "message", "time": time.time(), "message": _signed_cmd("S", "screen_on", nonce="k1")})
+        r._handle_line(cmd)
+        settle(5)
+        assert len(posted) == 5 and posted[-1]["ack"] == ["k1"]
+        # Повтор той же команды (подтверждение не дошло) не выполняется, но подтверждение уходит снова;
+        # чужую подпись с тем же номером не подтверждаем
+        r._handle_line(json.dumps({"event": "message", "time": time.time(),
+                                   "message": _signed_cmd("other", "screen_on", nonce="k1")}))
+        settle(6)
+        assert len(posted) == 5
+        r._handle_line(cmd)
+        settle(6)
+        assert len(posted) == 6 and posted[-1]["ack"] == ["k1"] and ran == ["screen_on"]
     finally:
         r.stop()
         srv.shutdown()

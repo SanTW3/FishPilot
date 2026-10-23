@@ -9,6 +9,7 @@
 Кто знает секрет, тот видит статус и управляет макросом, поэтому он длинный и случайный
 и передаётся только в ссылке на мини-приложение в вашем личном чате с ботом.
 """
+import collections
 import hashlib
 import json
 import threading
@@ -16,7 +17,7 @@ import time
 import urllib.parse
 import urllib.request
 
-from .mqttlink import pack_status, unpack_command
+from .mqttlink import pack_status, signed_nonce, unpack
 from .i18n import tr
 
 COMMANDS = {"start", "stop", "screen_on", "screen_off", "shot", "alarm_off", "status", "catches", "reset_catches"}
@@ -71,6 +72,10 @@ class Remote:
         self._mq_time = -MQTT_EVERY
         self._mq_force = False
         self._seen = {}           # одноразовые номера команд — одна команда не выполнится дважды
+        # Номера последних полученных команд уходят в статусе (ack): панель повторяет команду, пока не увидит
+        # свой номер, — иначе команда, застрявшая в оборванном соединении телефона, просто терялась
+        self._acks = collections.deque(maxlen=8)
+        self._ntfy_force = False
         self._started = time.time()
         self.mqtt = None          # подключаемся к брокерам, только когда панель включена (см. _sync_mqtt)
         threading.Thread(target=self._publish_loop, daemon=True).start()
@@ -94,14 +99,23 @@ class Remote:
             self.mqtt.stop()
             self.mqtt = None
 
-    def _mqtt_command(self, cmd):
+    def _mqtt_command(self, cmd, nonce=None):
         if cmd in ("_connected", "ping"):
             # Подключились к брокеру или панель открыли — сразу свежий статус
             self._mq_force = True
             self._kick.set()
         elif cmd in COMMANDS and self._enabled():
-            self.log(tr("Мини-приложение: {cmd}", cmd=cmd))
-            self.on_command(cmd)
+            self._run(cmd, nonce)
+
+    def _run(self, cmd, nonce, via_ntfy=False):
+        self.log(tr("Мини-приложение: {cmd}", cmd=cmd))
+        self.on_command(cmd)
+        if nonce:
+            self._acks.append(nonce)
+        # Подтверждение — сразу, тем же путём, каким пришла команда (у панели мог отвалиться MQTT)
+        self._mq_force = True
+        self._ntfy_force = self._ntfy_force or via_ntfy
+        self._kick.set()
 
     def poke(self):
         """Статус изменился — опубликовать поскорее."""
@@ -137,7 +151,7 @@ class Remote:
             if not self._enabled():
                 continue
             try:
-                status = self.get_status()
+                status = dict(self.get_status(), ack=list(self._acks))
             except Exception:
                 continue
             now = time.monotonic()
@@ -157,13 +171,15 @@ class Remote:
                     except Exception as exc:
                         self.last_error = f"MQTT: {exc}"
                 # Брокер на связи — ntfy (с его лимитом) только если панель сама попросила через него
-                if not self._ping:
+                if not (self._ping or self._ntfy_force):
                     continue
             last = self._last_sent or {}
             since = now - self._last_time
             watching = now < self._watch_until
             important = any(key.get(k) != last.get(k) for k in IMPORTANT) and since >= MIN_INTERVAL
-            if self._ping and since >= WATCH_INTERVAL:
+            if self._ntfy_force:
+                due = True                      # подтверждение команды, пришедшей через ntfy
+            elif self._ping and since >= WATCH_INTERVAL:
                 due = True                      # панель только что открыли или она жива
             elif watching and key != last and since >= WATCH_INTERVAL:
                 due = True
@@ -172,6 +188,7 @@ class Remote:
             if not due:
                 continue
             self._ping = False
+            self._ntfy_force = False
             body = dict(status, ts=int(time.time()))
             secret = self.cfg["remote_secret"]
             topic = topics(secret)[0]
@@ -222,9 +239,13 @@ class Remote:
         if msg.get("event") != "message":
             return
         # Команда подписана секретом (как в MQTT): чужую не примем, перехваченную не повторим
-        cmd = unpack_command(self.cfg.get("remote_secret") or "", str(msg.get("message", "")), self._seen,
-                             not_before=self._started)
+        cmd, nonce = unpack(self.cfg.get("remote_secret") or "", str(msg.get("message", "")), self._seen,
+                            not_before=self._started)
         if not cmd:
+            # Повтор уже выполненной команды через ntfy: у панели не дошло подтверждение по MQTT — шлём его сюда
+            if signed_nonce(self.cfg.get("remote_secret") or "", str(msg.get("message", ""))) in self._acks:
+                self._ntfy_force = True
+                self._kick.set()
             return
         if cmd == "ping":
             # Панель открыта: прислать ей свежий статус и держать его свежим, пока она пингует
@@ -233,5 +254,4 @@ class Remote:
             self._kick.set()
             return
         if cmd in COMMANDS:
-            self.log(tr("Мини-приложение: {cmd}", cmd=cmd))
-            self.on_command(cmd)
+            self._run(cmd, nonce, via_ntfy=True)

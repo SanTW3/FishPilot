@@ -106,6 +106,8 @@
       linear-gradient(90deg, #ff5f6d, #ffc371, #f9f871, #6bff9e, #4fd8ff, #b48cff, #ff5f6d) border-box;
     background-size: 100% 100%, 300% 100%; animation: rainbow 3s linear infinite; }
   @keyframes rainbow { to { background-position: 300% 0; } }
+  .fish .r-legendary .name, .fish .r-legendary img { will-change: background-position; }
+  button.sending { opacity: .65; }
   @media (prefers-reduced-motion: reduce) { .r-legendary .name, .r-legendary img { animation: none; } }
   .fish li b { color: var(--hilite); font-style: italic; }
   .fish .empty { color: var(--muted); font-style: italic; }
@@ -218,6 +220,8 @@
       "Скриншот придёт в чат с ботом": "The screenshot will arrive in the bot chat",
       "Список улова придёт в чат с ботом": "The catch list will arrive in the bot chat",
       "Список улова очищен": "Catch list cleared", "Команда отправлена": "Command sent",
+      "Отправка…": "Sending…", "Команда выполнена": "Done",
+      "ПК не ответил — проверьте, что программа запущена и есть интернет": "The PC didn't respond — check that the app is running and online",
       "Не удалось отправить: нет сети?": "Couldn't send: no network?",
       "Остановить макрос?": "Stop fishing?", "Очистить список улова?": "Clear the catch list?",
       "❤ Поддержать автора": "❤ Support the author",
@@ -246,6 +250,8 @@
       "Скриншот придёт в чат с ботом": "La captura llegará al chat del bot",
       "Список улова придёт в чат с ботом": "La lista de capturas llegará al chat del bot",
       "Список улова очищен": "Lista de capturas borrada", "Команда отправлена": "Comando enviado",
+      "Отправка…": "Enviando…", "Команда выполнена": "Hecho",
+      "ПК не ответил — проверьте, что программа запущена и есть интернет": "El PC no respondió: comprueba que el programa esté abierto y con internet",
       "Не удалось отправить: нет сети?": "No se pudo enviar: ¿sin red?",
       "Остановить макрос?": "¿Detener la pesca?", "Очистить список улова?": "¿Borrar la lista de capturas?",
       "❤ Поддержать автора": "❤ Apoyar al autor",
@@ -274,6 +280,8 @@
       "Скриншот придёт в чат с ботом": "A captura de tela chegará no chat do bot",
       "Список улова придёт в чат с ботом": "A lista de capturas chegará no chat do bot",
       "Список улова очищен": "Lista de capturas limpa", "Команда отправлена": "Comando enviado",
+      "Отправка…": "Enviando…", "Команда выполнена": "Feito",
+      "ПК не ответил — проверьте, что программа запущена и есть интернет": "O PC não respondeu — verifique se o programa está aberto e com internet",
       "Не удалось отправить: нет сети?": "Não foi possível enviar: sem rede?",
       "Остановить макрос?": "Parar a pesca?", "Очистить список улова?": "Limpar a lista de capturas?",
       "❤ Поддержать автора": "❤ Apoiar o autor",
@@ -295,10 +303,11 @@
     document.querySelectorAll("[data-i18n]").forEach(el => { el.textContent = t(el.dataset.i18n); });
     return true;
   }
-  function sentText(cmd) {
+  function sentText(cmd, done) {
     return t(cmd === "shot" ? "Скриншот придёт в чат с ботом"
       : cmd === "catches" ? "Список улова придёт в чат с ботом"
-      : cmd === "reset_catches" ? "Список улова очищен" : "Команда отправлена");
+      : cmd === "reset_catches" ? "Список улова очищен"
+      : done ? "Команда выполнена" : "Команда отправлена");
   }
   setLang(hash.get("l") || tgLang || "en");
   const secret = hash.get("t");
@@ -358,19 +367,22 @@
     return JSON.parse(m.d);
   }
 
-  async function mqSend(cmd, only) {
-    const msg = await signed(cmd);
-    // Одна и та же команда (тот же nonce) во все брокеры — ПК выполнит её один раз
-    for (const l of (only ? [only] : links)) if (l.ok) l.client.publish(mqBase + "/c", msg, { qos: 1 });
+  // Одно и то же сообщение (тот же nonce) во все брокеры — ПК выполнит команду один раз
+  function mqPublish(msg, only) {
+    let n = 0;
+    for (const l of (only ? [only] : links)) if (l.ok) { l.client.publish(mqBase + "/c", msg, { qos: 0 }); n++; }
+    return n;
   }
+  async function mqSend(cmd, only) { mqPublish(await signed(cmd), only); }
 
   async function startMqtt() {
     if (!mqttUrls.length) return;
     if (!window.mqtt) { mqNote = t("MQTT: не загрузилась библиотека"); mqState(); return; }
     for (const url of mqttUrls) {
       let host = url, plain = url;
+      // keepalive 15 с: оборванное соединение телефона (сон, смена сети) замечаем быстро, а не через минуту
       const opts = { clientId: "gpo-tg-" + hex(crypto.getRandomValues(new Uint8Array(6))),
-                     reconnectPeriod: 4000, connectTimeout: 10000, clean: true };
+                     reconnectPeriod: 3000, connectTimeout: 8000, keepalive: 15, clean: true };
       try {
         const u = new URL(url);
         host = u.hostname.replace(/^(broker|mqtt|public)\./, "") + ":" + (u.port || "443");
@@ -409,7 +421,7 @@
   let runStart = null;
 
   function setStatus(s) {
-    if (status && s.ts < status.ts) return;           // устаревший статус
+    if (status && s.ts < status.ts) { checkAcks(s); return; }   // устаревший статус — но ack из него берём
     if (s.lang) setLang(s.lang);                        // язык — как в программе на ПК
     if (!s.running) runStart = null;
     else {
@@ -417,6 +429,7 @@
       if (runStart === null || Math.abs(est - runStart) > 5) runStart = est;
     }
     status = s;
+    checkAcks(s);
     render();
   }
   let toastTimer = null;
@@ -434,47 +447,16 @@
     return `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
   }
 
-  function render() {
-    const now = Date.now() / 1000;
-    const online = status && now - status.ts < OFFLINE_AFTER;
-    const pill = $("pill");
-    const waiting = !paused && (now - lastPing < WAIT_REPLY || now - pageStart < WAIT_REPLY);
-    if (!status) {
-      const away = fetched && !waiting;
-      pill.className = "pill away"; pill.textContent = away ? t("ПК не в сети") : t("Подключение…");
-      $("meta").textContent = netError ? t("Нет связи с ntfy.sh — проверьте интернет или VPN")
-        : paused ? t("Обновление на паузе — коснитесь экрана")
-        : away ? t("Запустите макрос на ПК — статус появится сам") : t("Ждём статус от ПК…");
-    } else if (!online && waiting) {
-      pill.className = "pill away"; pill.textContent = t("Подключение…");
-    } else if (!online) {
-      pill.className = "pill away"; pill.textContent = t("ПК не в сети");
-    } else if (status.running) {
-      pill.className = "pill on"; pill.textContent = status.state || t("Работает");
-    } else {
-      pill.className = "pill off"; pill.textContent = status.state || t("Остановлен");
-    }
-    document.querySelectorAll("button").forEach(b => b.disabled = !online);
-    if (!status) return;
-
-    const runtime = status.running && runStart !== null ? now - runStart : status.runtime;
-    $("catches").textContent = status.catches;
-    $("casts").textContent = status.casts;
-    $("runtime").textContent = fmtTime(runtime);
-    $("rate").textContent = runtime >= 60 ? Math.round(status.catches * 3600 / runtime) : "0";
-
-    const toggle = $("toggle");
-    toggle.className = "big " + (status.running ? "stop" : "start");
-    toggle.textContent = status.running ? t("■ Стоп") : t("▶ Старт");
-    toggle.dataset.cmd = status.running ? "stop" : "start";
-
-    const scr = $("screen");
-    scr.textContent = status.blackout ? t("🔆 Вкл. экран") : t("🌑 Погасить");
-    scr.dataset.cmd = status.blackout ? "screen_on" : "screen_off";
-
+  // Список улова пересобираем, только когда он изменился: раньше он строился заново каждую секунду,
+  // и радуга легендарных рыб каждый раз начиналась сначала — анимация дёргалась
+  let fishKey = null;
+  function renderFish() {
+    const fish = status.fish || [];
+    const key = JSON.stringify([fish, status.fish_log, lang]);
+    if (key === fishKey) return;
+    fishKey = key;
     const list = $("fishList");
     list.replaceChildren();
-    const fish = status.fish || [];
     if (!fish.length) {
       const li = document.createElement("li");
       li.className = "empty";
@@ -503,6 +485,54 @@
       li.append(icon, name, count);
       list.append(li);
     }
+    // Фаза радуги — по часам, а не с момента создания: после обновления списка она продолжается без скачка
+    const phase = `-${Date.now() % 3000}ms`;
+    list.querySelectorAll(".r-legendary .name, .r-legendary img").forEach(el => el.style.animationDelay = phase);
+  }
+
+  function render() {
+    const now = Date.now() / 1000;
+    const online = status && now - status.ts < OFFLINE_AFTER;
+    const pill = $("pill");
+    const waiting = !paused && (now - lastPing < WAIT_REPLY || now - pageStart < WAIT_REPLY);
+    if (!status) {
+      const away = fetched && !waiting;
+      pill.className = "pill away"; pill.textContent = away ? t("ПК не в сети") : t("Подключение…");
+      $("meta").textContent = netError ? t("Нет связи с ntfy.sh — проверьте интернет или VPN")
+        : paused ? t("Обновление на паузе — коснитесь экрана")
+        : away ? t("Запустите макрос на ПК — статус появится сам") : t("Ждём статус от ПК…");
+    } else if (!online && waiting) {
+      pill.className = "pill away"; pill.textContent = t("Подключение…");
+    } else if (!online) {
+      pill.className = "pill away"; pill.textContent = t("ПК не в сети");
+    } else if (status.running) {
+      pill.className = "pill on"; pill.textContent = status.state || t("Работает");
+    } else {
+      pill.className = "pill off"; pill.textContent = status.state || t("Остановлен");
+    }
+    const busy = new Set([...pending.values()].map(p => p.cmd));
+    document.querySelectorAll("button").forEach(b => {
+      b.disabled = !online;
+      b.classList.toggle("sending", busy.has(b.dataset.cmd));
+    });
+    if (!status) return;
+
+    const runtime = status.running && runStart !== null ? now - runStart : status.runtime;
+    $("catches").textContent = status.catches;
+    $("casts").textContent = status.casts;
+    $("runtime").textContent = fmtTime(runtime);
+    $("rate").textContent = runtime >= 60 ? Math.round(status.catches * 3600 / runtime) : "0";
+
+    const toggle = $("toggle");
+    toggle.className = "big " + (status.running ? "stop" : "start");
+    toggle.textContent = status.running ? t("■ Стоп") : t("▶ Старт");
+    toggle.dataset.cmd = status.running ? "stop" : "start";
+
+    const scr = $("screen");
+    scr.textContent = status.blackout ? t("🔆 Вкл. экран") : t("🌑 Погасить");
+    scr.dataset.cmd = status.blackout ? "screen_on" : "screen_off";
+
+    renderFish();
 
     $("alarm").classList.toggle("show", !!status.alarm);
     $("alarmText").textContent = status.alarm || "";
@@ -525,19 +555,59 @@
     } catch (e) {}
   }
 
+  // Команда ждёт подтверждения: ПК кладёт её номер в статус (ack). Пока его нет — повторяем то же сообщение
+  // через все брокеры и ntfy (ПК выполнит его один раз). Так команда не теряется в оборванном соединении.
+  const RETRY_AT = [1500, 4000, 8000], GIVE_UP = 12000;
+  const pending = new Map();   // nonce → {cmd, msg, timers}
+  const ackSupported = () => !!(status && Array.isArray(status.ack));   // ПК старше 2.0.3 ack не шлёт
+
+  async function postNtfy(msg) {
+    const r = await fetch(`${server}/${cmdTopic}`, { method: "POST", body: msg });
+    if (!r.ok) throw new Error(r.status);
+  }
+
+  function deliver(msg, retry) {
+    const viaMqtt = mqPublish(msg);
+    // Сначала — только MQTT (быстро, без лимита); при повторе или без брокеров — ещё и ntfy
+    if (retry || !viaMqtt) return postNtfy(msg).then(() => true, () => viaMqtt > 0);
+    return Promise.resolve(true);
+  }
+
+  function settle(nonce, text) {
+    const p = pending.get(nonce);
+    if (!p) return;
+    p.timers.forEach(clearTimeout);
+    pending.delete(nonce);
+    if (text) toast(text);
+    render();
+  }
+
   async function send(cmd) {
     if (tg && tg.HapticFeedback) tg.HapticFeedback.impactOccurred("medium");
-    try {
-      if (mqOk) {
-        await mqSend(cmd);
-        toast(sentText(cmd));
-        return;
-      }
-      const r = await fetch(`${server}/${cmdTopic}`, { method: "POST", body: await signed(cmd) });
-      if (!r.ok) throw new Error(r.status);
-      toast(sentText(cmd));
-    } catch (e) {
-      toast(t("Не удалось отправить: нет сети?"));
+    let msg;
+    try { msg = await signed(cmd); } catch (e) { toast(t("Не удалось отправить: нет сети?")); return; }
+    const nonce = JSON.parse(msg).n;
+    const p = { cmd, msg, timers: [] };
+    pending.set(nonce, p);
+    render();
+    const sent = await deliver(msg, false);
+    if (!ackSupported()) {
+      // Старая программа на ПК не подтверждает команды — как раньше, «отправлено», и пара тихих повторов
+      toast(sent ? sentText(cmd) : t("Не удалось отправить: нет сети?"));
+      p.timers.push(setTimeout(() => deliver(msg, true), RETRY_AT[0]));
+      p.timers.push(setTimeout(() => settle(nonce), RETRY_AT[0] + 100));
+      return;
+    }
+    toast(t("Отправка…"));
+    for (const ms of RETRY_AT) p.timers.push(setTimeout(() => deliver(msg, true), ms));
+    p.timers.push(setTimeout(() => settle(nonce, t("ПК не ответил — проверьте, что программа запущена и есть интернет")), GIVE_UP));
+  }
+
+  function checkAcks(s) {
+    if (!Array.isArray(s.ack)) return;
+    for (const nonce of s.ack) {
+      const p = pending.get(nonce);
+      if (p) settle(nonce, "✓ " + sentText(p.cmd, true));
     }
   }
 
@@ -562,7 +632,17 @@
     if (paused) { paused = false; ping(); }
   }
   document.addEventListener("pointerdown", wake);
-  document.addEventListener("visibilitychange", () => { if (!document.hidden) { wake(); ping(); } });
+  let hiddenAt = 0;
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) { hiddenAt = Date.now(); return; }
+    // После сна телефона сокеты брокеров часто мёртвые, хотя выглядят живыми — переподключаем сразу
+    if (hiddenAt && Date.now() - hiddenAt > 10000) for (const l of links) {
+      l.ok = false;
+      l.client.end(true, {}, () => l.client.reconnect());
+    }
+    hiddenAt = 0;
+    wake(); ping();
+  });
   setInterval(ping, PING_EVERY * 1000);
 
   $("donate").addEventListener("click", e => {
