@@ -659,29 +659,32 @@ def test_windows_ocr_reads_text():
     assert clean_name(text) == "Golden Carp"
 
 
-def test_failed_first_cast_turns_on_wake_click(monkeypatch):
-    """Первый заброс после рыбы не сработал — включается клик перед выбором удочки, и он идёт до слотов."""
+def test_no_slot_keys_right_after_catch(monkeypatch):
+    """После поимки удочка в руках: слоты не нажимаем (иначе при пустом «другом» слоте удочка убиралась).
+    Если заброс после поимки всё же не сработал — снова выбираем удочку слотом."""
     from macro import engine as eng
     logs, actions = [], []
-    monkeypatch.setattr(eng.winput, "press_key", lambda k: actions.append(("key", k)))
-    monkeypatch.setattr(eng.winput, "click", lambda x, y: actions.append(("click", (x, y))))
+    monkeypatch.setattr(eng.winput, "press_key", lambda k: actions.append(k))
     monkeypatch.setattr(eng.MacroEngine, "_check_black_screen", lambda self: None)
-    cfg = dict(config.DEFAULTS, rod_select_delay=0.0, cursor_delay=0.0, other_hotkey="2", rod_hotkey="7",
-               water_point=[50, 60], auto_buy_bait=False, auto_select_bait=False)
+    cfg = dict(config.DEFAULTS, rod_select_delay=0.0, other_hotkey="2", rod_hotkey="7", auto_buy_bait=False,
+               auto_select_bait=False)
     e = eng.MacroEngine(cfg, log=logs.append)
-    e._pre_cast(fresh=True)
-    assert actions == [("key", "2"), ("key", "7")]          # по умолчанию без клика
-    e._learn_cast(True)
-    assert not cfg["wake_click"]
-    e._learn_cast(False)
-    e._learn_cast(False)
-    assert cfg["wake_click"] and len(logs) == 1
+    e._pre_cast("start")
+    assert actions == ["2", "7"]
     actions.clear()
-    e._pre_cast(fresh=True)
-    assert actions == [("click", (50, 60)), ("key", "2"), ("key", "7")]
+    e._pre_cast("catch")
+    assert actions == []
+    e._pre_cast(None)                       # перезаброс — состояние неизвестно, выбираем удочку
+    assert actions == ["2", "7"]
+    e._learn_cast("catch", True)
+    assert not cfg["reselect_after_catch"] and not logs
+    e._learn_cast("catch", False)
+    assert cfg["reselect_after_catch"] and len(logs) == 1
     actions.clear()
-    e._pre_cast(fresh=False)                                 # перезаброс — без клика
-    assert actions == [("key", "2"), ("key", "7")]
+    e._pre_cast("catch")
+    assert actions == ["2", "7"]
+    e._learn_cast("start", False)           # после старта — подсказка про «другой» слот
+    assert "Любой другой слот" in logs[-1]
 
 
 def test_catch_photos_do_not_delay_next_cast(monkeypatch):
@@ -725,6 +728,10 @@ def test_migration_turns_catch_log_on(tmp_path):
     with open(path, "w", encoding="utf-8") as f:
         json.dump({"config_version": 8, "rod_select_delay": 0.3}, f)
     assert config.load(path)["rod_select_delay"] == 0.8
+    # v10: «клик перед выбором удочки» из 2.1.7 убран
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump({"config_version": 9, "wake_click": True}, f)
+    assert "wake_click" not in config.load(path)
     # v7: мини-приложение переехало из gpo-macro в FishPilot, свой адрес не трогаем
     for old, new in (("https://santw3.github.io/gpo-macro/", config.DEFAULTS["webapp_url"]),
                      ("https://me.github.io/panel/", "https://me.github.io/panel/")):

@@ -499,7 +499,8 @@ T = {
     "GitHub временно ограничил проверки с вашего адреса — попробую позже": "GitHub limitó temporalmente las comprobaciones desde tu dirección; lo intentaré más tarde",
     "Копировать": "Copiar",
     "Копировать весь журнал": "Copiar todo el registro",
-    "Первый заброс не сработал — игра, похоже, не принимает клавиши слотов сразу после поимки. Включаю «Клик перед выбором удочки» (Тонкая настройка → Задержки)": "El primer lanzamiento no funcionó: el juego parece ignorar las teclas de ranura justo después de una captura. Activo «Clic antes de elegir la caña» (Ajustes avanzados → Retrasos)",
-    "Клик перед выбором удочки": "Clic antes de elegir la caña",
-    "Если после поимки удочка не берётся в руки — включается сама": "Si tras una captura la caña no se toma en la mano, se activa sola",
+    "Заброс сразу после поимки не сработал — включаю «Выбирать удочку после поимки» (Тонкая настройка → Задержки)": "El lanzamiento justo después de una captura no funcionó: activo «Elegir la caña tras una captura» (Ajustes avanzados → Retrasos)",
+    "Заброс не сработал. Проверьте «Любой другой слот» (Настройка → Слоты): в нём должен лежать предмет. Если слот пустой, нажатие слота удочки её убирает": "El lanzamiento no funcionó. Revisa «Cualquier otra ranura» (Configuración → Ranuras): debe tener un objeto. Si está vacía, pulsar la ranura de la caña la guarda",
+    "Выбирать удочку после поимки": "Elegir la caña tras una captura",
+    "Обычно после рыбы удочка в руках — выкл. Включается сама, если заброс не сработал": "Normalmente la caña sigue en la mano tras un pez — desactivado. Se activa solo si el lanzamiento falla",
 }

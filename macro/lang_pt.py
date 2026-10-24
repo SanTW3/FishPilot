@@ -499,7 +499,8 @@ T = {
     "GitHub временно ограничил проверки с вашего адреса — попробую позже": "O GitHub limitou temporariamente as verificações do seu endereço — tentarei mais tarde",
     "Копировать": "Copiar",
     "Копировать весь журнал": "Copiar todo o registro",
-    "Первый заброс не сработал — игра, похоже, не принимает клавиши слотов сразу после поимки. Включаю «Клик перед выбором удочки» (Тонкая настройка → Задержки)": "O primeiro arremesso não funcionou — o jogo parece ignorar as teclas de slot logo após uma captura. Ativando “Clique antes de pegar a vara” (Ajustes avançados → Atrasos)",
-    "Клик перед выбором удочки": "Clique antes de pegar a vara",
-    "Если после поимки удочка не берётся в руки — включается сама": "Se após uma captura a vara não for pega, ativa-se sozinho",
+    "Заброс сразу после поимки не сработал — включаю «Выбирать удочку после поимки» (Тонкая настройка → Задержки)": "O arremesso logo após uma captura não funcionou — ativando “Pegar a vara após a captura” (Ajustes avançados → Atrasos)",
+    "Заброс не сработал. Проверьте «Любой другой слот» (Настройка → Слоты): в нём должен лежать предмет. Если слот пустой, нажатие слота удочки её убирает": "O arremesso não funcionou. Verifique “Qualquer outro slot” (Configuração → Slots): ele deve ter um item. Se o slot estiver vazio, apertar o slot da vara a guarda",
+    "Выбирать удочку после поимки": "Pegar a vara após a captura",
+    "Обычно после рыбы удочка в руках — выкл. Включается сама, если заброс не сработал": "Normalmente a vara fica na mão após um peixe — desligado. Liga sozinho se o arremesso falhar",
 }

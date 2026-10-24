@@ -499,7 +499,8 @@ T = {
     "GitHub временно ограничил проверки с вашего адреса — попробую позже": "GitHub has temporarily limited checks from your address — will try again later",
     "Копировать": "Copy",
     "Копировать весь журнал": "Copy the whole log",
-    "Первый заброс не сработал — игра, похоже, не принимает клавиши слотов сразу после поимки. Включаю «Клик перед выбором удочки» (Тонкая настройка → Задержки)": "The first cast didn't work — the game apparently ignores slot keys right after a catch. Turning on “Click before picking the rod” (Fine-tuning → Delays)",
-    "Клик перед выбором удочки": "Click before picking the rod",
-    "Если после поимки удочка не берётся в руки — включается сама": "If the rod isn't picked up after a catch — turns on by itself",
+    "Заброс сразу после поимки не сработал — включаю «Выбирать удочку после поимки» (Тонкая настройка → Задержки)": "The cast right after a catch didn't work — turning on “Pick the rod after a catch” (Fine-tuning → Delays)",
+    "Заброс не сработал. Проверьте «Любой другой слот» (Настройка → Слоты): в нём должен лежать предмет. Если слот пустой, нажатие слота удочки её убирает": "The cast didn't work. Check “Any other slot” (Setup → Slots): it must hold an item. If the slot is empty, pressing the rod slot puts the rod away",
+    "Выбирать удочку после поимки": "Pick the rod after a catch",
+    "Обычно после рыбы удочка в руках — выкл. Включается сама, если заброс не сработал": "Usually the rod stays in hand after a fish — off. Turns on by itself if the cast didn't work",
 }

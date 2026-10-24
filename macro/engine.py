@@ -299,14 +299,14 @@ class MacroEngine:
         try:
             winput.micro_delay = float(self.cfg["micro_delay"])
             self._focus_roblox()
-            fresh = True                     # первый заброс после старта или после рыбы
+            fresh = "start"                  # первый заброс после старта ("start") или после рыбы ("catch")
             while True:
                 self._pre_cast(fresh)
                 self._cast()
                 bite = self._wait_for_bite()
                 if fresh:
-                    self._learn_cast(bite)
-                fresh = False
+                    self._learn_cast(fresh, bite)
+                fresh = None
                 if not bite:
                     self.watchdog.on_cast_failed()
                     self.log(tr("Нет поклёвки за {v0} с — перезаброс ({failed_casts} подряд)", v0=self.cfg['recast_timeout'], failed_casts=self.watchdog.failed_casts))
@@ -322,7 +322,7 @@ class MacroEngine:
                 self._emit_stats()
                 self._post_catch()
                 self.stats["loops"] += 1
-                fresh = True
+                fresh = "catch"
         except _Stopped:
             pass
         except Exception as exc:
@@ -335,8 +335,9 @@ class MacroEngine:
                 self.on_status(tr("Остановлен"), "red")
             self.log(tr("Макрос остановлен"))
 
-    def _pre_cast(self, fresh=False):
+    def _pre_cast(self, fresh=None):
         cfg = self.cfg
+        rod_in_hand = fresh == "catch" and not cfg.get("reselect_after_catch")
         winput.micro_delay = float(cfg["micro_delay"])
         if winput.CAN_CONTROL and winput.foreground_title() != "Roblox":
             self._focus_roblox()
@@ -358,11 +359,11 @@ class MacroEngine:
             self._click(cfg["buy_left"], "buy_click_delay")
             self._click(cfg["buy_right"], "buy_click_delay")
             self._click(cfg["buy_middle"], "buy_click_delay")
-        if fresh and cfg.get("wake_click"):
-            # После поимки игра у некоторых не принимает клавиши, пока не будет клика: слоты не нажимались,
-            # персонаж стоял с пустыми руками. Клик по воде пустыми руками ничего не делает, но «будит» ввод
-            self._click(cfg["water_point"], "cursor_delay")
-            self._sleep(0.2)
+            rod_in_hand = False                         # покупка убрала удочку
+        if rod_in_hand:
+            # После поимки удочка остаётся в руках. Нажимать слоты здесь опасно: если «другой» слот пуст,
+            # нажатие слота удочки её убирало — персонаж стоял с пустыми руками, заброс пропадал
+            return
         # Сначала «что-то другое», потом удочку: так удочка гарантированно в руках,
         # а не снята повторным нажатием той же клавиши
         self._key(cfg["other_hotkey"], "rod_select_delay")
@@ -370,13 +371,18 @@ class MacroEngine:
         if cfg.get("auto_select_bait"):
             self._click(cfg["bait_point"], "bait_click_delay")
 
-    def _learn_cast(self, bite):
-        """Первый заброс после рыбы (или старта) не сработал, а следующий — да: значит, игра не приняла клавиши
-        слотов, пока не было клика. Включаем «клик перед выбором удочки» (его видно и в настройках)."""
-        if not bite and not self.cfg.get("wake_click"):
-            self.cfg["wake_click"] = True
-            self.log(tr("Первый заброс не сработал — игра, похоже, не принимает клавиши слотов сразу после "
-                        "поимки. Включаю «Клик перед выбором удочки» (Тонкая настройка → Задержки)"))
+    def _learn_cast(self, fresh, bite):
+        """Первый заброс после рыбы или старта не сработал — подсказываем и подстраиваемся."""
+        if bite:
+            return
+        if fresh == "catch" and not self.cfg.get("reselect_after_catch"):
+            # Удочка после поимки, видимо, не остаётся в руках — снова выбираем её слотом (видно в настройках)
+            self.cfg["reselect_after_catch"] = True
+            self.log(tr("Заброс сразу после поимки не сработал — включаю «Выбирать удочку после поимки» "
+                        "(Тонкая настройка → Задержки)"))
+        else:
+            self.log(tr("Заброс не сработал. Проверьте «Любой другой слот» (Настройка → Слоты): в нём должен "
+                        "лежать предмет. Если слот пустой, нажатие слота удочки её убирает"))
 
     def _cast(self):
         cfg = self.cfg
