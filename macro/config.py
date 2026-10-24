@@ -145,7 +145,10 @@ def app_dir():
 def data_dir():
     """Где хранятся настройки, улов и логи: %APPDATA%\\FishPilot. Рядом с exe нельзя: в Program Files
     нет прав на запись, а при обновлении папка программы целиком заменяется."""
-    base = os.environ.get("APPDATA") or os.path.join(os.path.expanduser("~"), ".config")
+    if sys.platform == "darwin":
+        base = os.path.join(os.path.expanduser("~"), "Library", "Application Support")
+    else:
+        base = os.environ.get("APPDATA") or os.path.join(os.path.expanduser("~"), ".config")
     path = os.path.join(base, "FishPilot")
     os.makedirs(path, exist_ok=True)
     return path
@@ -321,6 +324,11 @@ def save(cfg, path=CONFIG_PATH):
     _write(path, json.dumps(public, indent=2, ensure_ascii=False).encode("utf-8"))
     secrets = {k: cfg.get(k, "") for k in SECRET_KEYS}
     _write(secrets_path(path), protect(json.dumps(secrets).encode("utf-8")))
+    if sys.platform != "win32":
+        try:
+            os.chmod(secrets_path(path), 0o600)
+        except OSError:
+            pass
 
 
 def export_settings(cfg, path):
@@ -379,7 +387,8 @@ def _dpapi(data, encrypt):
 def protect(data):
     if sys.platform == "win32":
         return b"DPAPI1" + _dpapi(data, True)
-    return b"PLAIN1" + base64.b64encode(data)   # не Windows (разработка, тесты)
+    # macOS и прочие: без шифрования, но файл читает только владелец (см. save)
+    return b"PLAIN1" + base64.b64encode(data)
 
 
 def unprotect(blob):

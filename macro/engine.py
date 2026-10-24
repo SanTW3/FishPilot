@@ -136,6 +136,14 @@ class MacroEngine:
             problems.append(tr("точка Store для фрукта"))
         if cfg.get("auto_select_bait") and not cfg.get("bait_point"):
             problems.append(tr("точка верхней наживки"))
+        # macOS: без этих разрешений клики не доходят до игры, а снимки экрана пустые.
+        # prompt=True — система сама откроет запрос с кнопкой «Открыть Системные настройки»
+        if not winput.accessibility_ok(prompt=True):
+            problems.append(tr("разрешение «Универсальный доступ» для FishPilot (Системные настройки → "
+                               "Конфиденциальность и безопасность)"))
+        if not winput.screen_capture_ok(prompt=True):
+            problems.append(tr("разрешение «Запись экрана» для FishPilot (Системные настройки → "
+                               "Конфиденциальность и безопасность), затем перезапустите программу"))
         return problems
 
     # ---------- утилиты ----------
@@ -192,7 +200,7 @@ class MacroEngine:
     def _ensure_roblox(self):
         """Клавиши и клики — только в Roblox. Если игра не на переднем плане, ничего не нажимаем, а ждём:
         иначе цифры, E и клики уходили в Discord или браузер. Долго нет окна — тревога сторожа."""
-        if not winput.IS_WINDOWS or winput.foreground_title() == "Roblox":
+        if not winput.CAN_CONTROL or winput.foreground_title() == "Roblox":
             return
         if self._mouse_held:
             winput.mouse_up()
@@ -324,7 +332,7 @@ class MacroEngine:
     def _pre_cast(self):
         cfg = self.cfg
         winput.micro_delay = float(cfg["micro_delay"])
-        if winput.IS_WINDOWS and winput.foreground_title() != "Roblox":
+        if winput.CAN_CONTROL and winput.foreground_title() != "Roblox":
             self._focus_roblox()
         self._check_black_screen()
         loops = self.stats["loops"]

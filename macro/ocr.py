@@ -1,7 +1,7 @@
-"""Распознавание текста встроенным в Windows OCR (Windows.Media.Ocr) — без Tesseract.
+"""Распознавание текста встроенным в систему OCR — без Tesseract.
 
-Нужны пакеты winrt-* (ставятся из requirements.txt только на Windows). Если их нет
-или Windows не умеет OCR, read_text() возвращает "" — журнал улова тогда группирует
+Windows — Windows.Media.Ocr (пакеты winrt-*), macOS — Apple Vision (pyobjc-framework-Vision).
+Если их нет или система не умеет OCR, read_text() возвращает "" — журнал улова тогда группирует
 рыбу по иконке.
 """
 import asyncio
@@ -34,7 +34,68 @@ def _get_engine():
 
 
 def available():
+    if sys.platform == "darwin":
+        return _vision() is not None
     return sys.platform == "win32" and _get_engine() is not None
+
+
+_vision_mod = None
+
+
+def _vision():
+    global _vision_mod, _unavailable
+    if _vision_mod is None and not _unavailable:
+        try:
+            import Quartz
+            import Vision
+            _vision_mod = (Vision, Quartz)
+        except Exception:
+            _unavailable = True
+    return _vision_mod
+
+
+def _recognize_mac(rgb):
+    """Apple Vision: строки со словами и рамками в пикселях картинки (начало координат — сверху слева)."""
+    import numpy as np
+    from Foundation import NSData, NSMakeRange
+    Vision, Quartz = _vision()
+    h, w = rgb.shape[:2]
+    rgba = np.empty((h, w, 4), dtype=np.uint8)
+    rgba[:, :, :3] = rgb
+    rgba[:, :, 3] = 255
+    raw = rgba.tobytes()
+    provider = Quartz.CGDataProviderCreateWithCFData(NSData.dataWithBytes_length_(raw, len(raw)))
+    image = Quartz.CGImageCreate(w, h, 8, 32, w * 4, Quartz.CGColorSpaceCreateDeviceRGB(),
+                                 Quartz.kCGImageAlphaNoneSkipLast, provider, None, False,
+                                 Quartz.kCGRenderingIntentDefault)
+    request = Vision.VNRecognizeTextRequest.alloc().init()
+    request.setRecognitionLevel_(Vision.VNRequestTextRecognitionLevelAccurate)
+    request.setUsesLanguageCorrection_(False)        # названия рыб — не словарные слова
+    request.setRecognitionLanguages_(["en-US"])
+    handler = Vision.VNImageRequestHandler.alloc().initWithCGImage_options_(image, None)
+    ok, error = handler.performRequests_error_([request], None)
+    if not ok:
+        raise RuntimeError(f"Vision: {error}")
+
+    def box(r):   # нормированная рамка Vision (начало снизу слева) → пиксели (начало сверху слева)
+        return (r.origin.x * w, (1 - r.origin.y - r.size.height) * h, r.size.width * w, r.size.height * h)
+
+    lines = []
+    for obs in request.results() or []:
+        candidates = obs.topCandidates_(1)
+        if not candidates:
+            continue
+        cand = candidates[0]
+        text = str(cand.string())
+        words, pos = [], 0
+        for word in text.split():
+            start = text.find(word, pos)
+            pos = start + len(word)
+            rect, _err = cand.boundingBoxForRange_error_(NSMakeRange(start, len(word)), None)
+            words.append((word, box(rect.boundingBox() if rect is not None else obs.boundingBox())))
+        lines.append({"text": text, "words": words, "_y": box(obs.boundingBox())[1]})
+    lines.sort(key=lambda line: line.pop("_y"))       # сверху вниз, как у Windows OCR
+    return lines
 
 
 async def _recognize(engine, rgb):
@@ -74,8 +135,9 @@ def read_lines(rgb, raise_errors=False):
     """Строки текста со словами и их рамками в координатах исходной картинки:
     [{"text": "New Item <Fangfish>", "words": [("New", (x, y, w, h)), …]}, …]"""
     global last_error
+    mac = sys.platform == "darwin"
     engine = _get_engine() if sys.platform == "win32" else None
-    if engine is None:
+    if engine is None and not (mac and _vision() is not None):
         return []
     # Мелкий игровой текст OCR читает лучше, если картинку увеличить
     from PIL import Image
@@ -86,7 +148,8 @@ def read_lines(rgb, raise_errors=False):
         k = 60 / max(img.height, 1)
         img = img.resize((int(img.width * k), 60), Image.LANCZOS)
     try:
-        data = asyncio.run(_recognize(engine, np.ascontiguousarray(np.asarray(img))))
+        pixels = np.ascontiguousarray(np.asarray(img))
+        data = {"lines": _recognize_mac(pixels)} if mac else asyncio.run(_recognize(engine, pixels))
     except Exception as exc:
         last_error = exc
         if raise_errors:

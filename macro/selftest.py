@@ -1,6 +1,7 @@
-"""Самопроверка exe (GPO-Fishing-Macro.exe --selftest): Windows OCR, разбор уведомления, paho-mqtt.
+"""Самопроверка сборки (FishPilot --selftest): системный OCR, разбор уведомления, paho-mqtt.
 
-Результат пишется в selftest.txt рядом с exe — у оконного exe нет консоли.
+Результат пишется в selftest.txt рядом с exe — у оконного exe нет консоли. На macOS — в папку из
+FISHPILOT_SELFTEST_DIR: файл внутри .app испортил бы подпись приложения.
 """
 import os
 import traceback
@@ -17,7 +18,13 @@ def run():
     ok = False
     try:
         img = Image.new("RGB", (520, 60), (40, 110, 190))
-        font = ImageFont.truetype("arialbd.ttf", 30)
+        font = None
+        for name in ("arialbd.ttf", "/System/Library/Fonts/Supplemental/Arial Bold.ttf"):
+            try:
+                font = ImageFont.truetype(name, 30)
+                break
+            except OSError:
+                pass
         ImageDraw.Draw(img).text((10, 12), "New Item <Golden Carp>", font=font, fill=(255, 255, 255),
                                  stroke_width=2, stroke_fill=(0, 0, 0))
         out.append(f"ocr.available: {ocr.available()}")
@@ -32,6 +39,7 @@ def run():
     except Exception:
         out.append(traceback.format_exc())
     out.append("RESULT: " + ("OK" if ok else "FAIL"))
-    with open(os.path.join(config.app_dir(), "selftest.txt"), "w", encoding="utf-8") as f:
+    folder = os.environ.get("FISHPILOT_SELFTEST_DIR") or config.app_dir()
+    with open(os.path.join(folder, "selftest.txt"), "w", encoding="utf-8") as f:
         f.write("\n".join(out) + "\n")
     return 0 if ok else 1

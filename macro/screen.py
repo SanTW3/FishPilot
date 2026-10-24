@@ -24,6 +24,11 @@ def grab(area):
     x, y, w, h = area
     shot = _sct().grab({"left": int(x), "top": int(y), "width": int(w), "height": int(h)})
     bgra = np.frombuffer(shot.raw, dtype=np.uint8).reshape(shot.height, shot.width, 4)
+    # macOS Retina: область задаётся в пунктах, а снимок приходит в пикселях (в 2 раза больше).
+    # Прореживаем до пунктов — распознаванию нужны те же размеры, что и на Windows
+    k = shot.width // max(int(w), 1)
+    if k > 1:
+        bgra = bgra[::k, ::k]
     return bgra[:, :, 2::-1].copy()
 
 

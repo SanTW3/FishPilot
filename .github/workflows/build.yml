@@ -75,10 +75,60 @@ jobs:
           name: FishPilot
           path: dist/FishPilot-win64.zip
 
+  # macOS (Apple Silicon): FishPilot.app в FishPilot-macos.zip. Подпись — ad-hoc (платной подписи Apple нет)
+  build-macos:
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: python -m pip install -r requirements.txt pyinstaller==6.22.3 pytest pip-licenses==5.0.0
+      - name: Test
+        timeout-minutes: 10
+        run: python -m pytest -q -rs -s tests
+      - name: Icon and licenses
+        run: |
+          mkdir -p build
+          python -c "from PIL import Image; Image.open('assets/icon.ico').save('build/icon.icns')"
+          python tools/build_meta.py licenses build/THIRD_PARTY_LICENSES.txt
+      - name: Build app
+        run: >
+          python -m PyInstaller --noconfirm --windowed --name FishPilot --icon build/icon.icns
+          --osx-bundle-identifier com.santw3.fishpilot --add-data "assets:assets"
+          --collect-data customtkinter gpo_macro.py
+      - name: Version in Info.plist
+        run: |
+          ver=$(python -c "import macro; print(macro.__version__)")
+          plist=dist/FishPilot.app/Contents/Info.plist
+          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $ver" "$plist"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $ver" "$plist"
+          /usr/libexec/PlistBuddy -c "Add :LSMinimumSystemVersion string 12.0" "$plist" || true
+          codesign --force --deep --sign - dist/FishPilot.app
+          codesign --verify --deep --strict dist/FishPilot.app
+      - name: Self-test (Apple Vision OCR inside the app)
+        run: |
+          FISHPILOT_SELFTEST_DIR="$RUNNER_TEMP" dist/FishPilot.app/Contents/MacOS/FishPilot --selftest; code=$?
+          cat "$RUNNER_TEMP/selftest.txt"
+          test $code -eq 0
+      - name: Zip
+        run: |
+          mkdir -p dist/pkg/FishPilot
+          ditto dist/FishPilot.app dist/pkg/FishPilot/FishPilot.app
+          cp LICENSE dist/pkg/FishPilot/LICENSE.txt
+          cp build/THIRD_PARTY_LICENSES.txt README.md dist/pkg/FishPilot/
+          ditto -c -k --keepParent dist/pkg/FishPilot dist/FishPilot-macos.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: FishPilot-macos
+          path: dist/FishPilot-macos.zip
+
   # Релиз vX.Y.Z, помеченный latest — программа проверяет releases/latest.
   # Сначала черновик с файлом, потом публикация: программа не увидит версию раньше файла.
   publish:
-    needs: build
+    needs: [build, build-macos]
     if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.publish)
     runs-on: ubuntu-latest
     permissions:
@@ -100,13 +150,18 @@ jobs:
         with:
           name: FishPilot
           path: dist
+      - uses: actions/download-artifact@v4
+        with:
+          name: FishPilot-macos
+          path: dist
       - name: Publish release
         run: |
           zsha=$(sha256sum dist/FishPilot-win64.zip | cut -d' ' -f1)
-          notes=$(printf '%s\n\n%s\n\nversion: %s\nzip_sha256: %s\ncommit: %s' \
-            "**Download FishPilot-win64.zip**, unpack it and run FishPilot.exe. Installed copies update themselves." \
+          msha=$(sha256sum dist/FishPilot-macos.zip | cut -d' ' -f1)
+          notes=$(printf '%s\n\n%s\n\nversion: %s\nzip_sha256: %s\nmac_zip_sha256: %s\ncommit: %s' \
+            "**Windows:** download FishPilot-win64.zip, unpack it and run FishPilot.exe. **macOS (Apple Silicon):** download FishPilot-macos.zip, unpack it, move FishPilot.app to Applications and see the README for first launch. Installed copies update themselves." \
             "Free, MIT license. Not affiliated with Roblox or Grand Piece Online; automating the game may break its rules — use at your own risk." \
-            "$VER" "$zsha" "$GITHUB_SHA")
-          gh release create "v$VER" dist/FishPilot-win64.zip --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            "$VER" "$zsha" "$msha" "$GITHUB_SHA")
+          gh release create "v$VER" dist/FishPilot-win64.zip dist/FishPilot-macos.zip --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
             --title "FishPilot $VER" --notes "$notes" --draft
           gh release edit "v$VER" --repo "$GITHUB_REPOSITORY" --draft=false --latest

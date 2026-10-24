@@ -488,4 +488,10 @@ T = {
     "файл обновления слишком большой": "the update file is too large",
     "Только окно Roblox, уходит на серверы Telegram вместе с тревогой": "Roblox window only, sent to Telegram servers with the alarm",
     "FishPilot бесплатный (лицензия MIT) и не связан с Roblox и Grand Piece Online. Автоматизация может нарушать правила игры — пользуйтесь на свой риск. Программа предоставляется «как есть».": "FishPilot is free (MIT license) and not affiliated with Roblox or Grand Piece Online. Automation may break the game's rules — use it at your own risk. The software is provided “as is”.",
+    "Журнал улова: распознавание текста недоступно — названия рыб не читаются": "Catch log: text recognition unavailable — fish names can't be read",
+    "Чёрный экран есть только в Windows: в macOS макрос под ним перестал бы видеть игру": "The black screen is Windows-only: on macOS the macro couldn't see the game under it",
+    "разрешение «Запись экрана» для FishPilot (Системные настройки → Конфиденциальность и безопасность), затем перезапустите программу": "“Screen Recording” permission for FishPilot (System Settings → Privacy & Security), then restart the app",
+    "разрешение «Универсальный доступ» для FishPilot (Системные настройки → Конфиденциальность и безопасность)": "“Accessibility” permission for FishPilot (System Settings → Privacy & Security)",
+    "FishPilot уже запущен — посмотрите в Dock.": "FishPilot is already running — check the Dock.",
+    "FishPilot уже запущен — посмотрите на панели задач.": "FishPilot is already running — check the taskbar.",
 }

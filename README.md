@@ -2,7 +2,7 @@
 
 *English · [Русский](README.ru.md)*
 
-A Windows app for Grand Piece Online (Roblox). It casts the rod, plays the fishing mini-game, keeps a catch log
+An app for Grand Piece Online (Roblox) on Windows and macOS. It casts the rod, plays the fishing mini-game, keeps a catch log
 and **rings your phone** when something goes wrong.
 
 > FishPilot is free (MIT license) and **not affiliated with Roblox or Grand Piece Online**. Automating the game
@@ -14,11 +14,33 @@ and **rings your phone** when something goes wrong.
 
 ## Install
 
+### Windows
+
 1. Download **FishPilot-win64.zip** from the [latest release](https://github.com/SanTW3/FishPilot/releases/latest).
 2. Unpack it to any folder (don't run it from inside the archive) and start `FishPilot\FishPilot.exe`.
    No Python needed.
 3. Windows SmartScreen may say "Windows protected your PC" — the app has no paid code signature.
    Click **More info → Run anyway**.
+
+### macOS (Apple Silicon, macOS 12+)
+
+1. Download **FishPilot-macos.zip** from the [latest release](https://github.com/SanTW3/FishPilot/releases/latest),
+   unpack it and move `FishPilot.app` to **Applications**.
+2. The app has no paid Apple signature, so the first launch is blocked. Open **System Settings → Privacy & Security**,
+   scroll down and click **Open Anyway** next to FishPilot. Alternatively run once in Terminal:
+   `xattr -dr com.apple.quarantine /Applications/FishPilot.app`
+3. On the first **Start** macOS asks for two permissions in **System Settings → Privacy & Security** —
+   turn FishPilot on in both, then restart the app:
+   - **Accessibility** — so clicks and keys reach Roblox;
+   - **Screen Recording** — so the macro can see the mini-game and the catch notification.
+4. F1–F5 on a laptop keyboard may need **fn**.
+
+Not available on macOS: the HUD over the game and the black screen (macOS can't hide a window from screen
+capture or make it click-through). After each update macOS may ask for the permissions again — just re-enable them.
+Settings live in `~/Library/Application Support/FishPilot`; tokens there are readable only by your user account
+(not encrypted as on Windows).
+
+### Updates
 
 The app updates itself: when a new version is out, an **⬆ Update to …** button appears in the bottom left.
 It downloads the zip, checks its SHA-256, replaces the files after the app closes and starts again.
@@ -63,7 +85,7 @@ public MQTT brokers (hashed topic, HMAC-signed), and the update check to GitHub.
 
 ## Build from source
 
-Python 3.10+: `run.bat` starts the app, `build.bat` builds `dist\FishPilot` and `dist\FishPilot-win64.zip`.
+Python 3.10+: `run.bat` (Windows) or `python gpo_macro.py` starts the app, `build.bat` builds `dist\FishPilot` and `dist\FishPilot-win64.zip`.
 Tests: `python -m pytest tests`.
 
 To release, bump `__version__` in `macro/__init__.py`, then push a `vX.Y.Z` tag or run the **Build FishPilot**

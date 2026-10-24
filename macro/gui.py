@@ -802,13 +802,14 @@ class App:
 
         c = self._card(page, tr("Экран"))
         self._switch(c, tr("Окно программы поверх всех"), "always_on_top", command=self._apply_topmost)
-        self._switch(c, tr("HUD поверх игры"), "hud_enabled",
-                     tr("Рамка области и показатели над Roblox, пока идёт ловля"),
-                     command=lambda: self._tick_hud(once=True))
-        self._switch(c, tr("Гасить экран после старта"), "blackout_enabled",
-                     tr("Вы видите чёрный экран, а макрос — игру. Вернуть: любая клавиша или мышь"))
-        self._switch(c, tr("Гасить все мониторы"), "blackout_all_monitors", tr("Выкл — только монитор с Roblox"))
-        self._num(c, tr("Гасить через"), "blackout_delay", tr("После «Старт»"), unit=tr("с"))
+        if not winput.IS_MAC:   # HUD и чёрный экран держатся на возможностях Windows (см. hud.py, blackout.py)
+            self._switch(c, tr("HUD поверх игры"), "hud_enabled",
+                         tr("Рамка области и показатели над Roblox, пока идёт ловля"),
+                         command=lambda: self._tick_hud(once=True))
+            self._switch(c, tr("Гасить экран после старта"), "blackout_enabled",
+                         tr("Вы видите чёрный экран, а макрос — игру. Вернуть: любая клавиша или мышь"))
+            self._switch(c, tr("Гасить все мониторы"), "blackout_all_monitors", tr("Выкл — только монитор с Roblox"))
+            self._num(c, tr("Гасить через"), "blackout_delay", tr("После «Старт»"), unit=tr("с"))
 
         c = self._card(page, tr("Помощь"), tr("Если что-то не работает — пришлите диагностику автору"))
         self._buttons(c, (tr("Скопировать диагностику"), self._copy_diagnostics, ACCENT, ACCENT_HOVER),
@@ -982,7 +983,7 @@ class App:
         """HUD виден, пока идёт ловля и активно окно Roblox: поверх других окон он не нужен.
         Прячется и на время выбора области/точки (там своя рамка), и при чёрном экране."""
         try:
-            in_roblox = not winput.IS_WINDOWS or winput.foreground_title() == "Roblox"
+            in_roblox = not winput.CAN_CONTROL or winput.foreground_title() == "Roblox"
             want = (bool(self.cfg.get("hud_enabled")) and self.engine.running and in_roblox
                     and not self._overlay_open() and not self.blackout.active)
             if want and not self.hud.visible:
@@ -1151,8 +1152,8 @@ class App:
             log = self.catch_log
             catch = log.add_frames(frames)
             if catch is None:
-                if sys.platform == "win32" and not ocr.available():
-                    self.log_threadsafe(tr("Журнал улова: Windows OCR недоступен — названия рыб не читаются"))
+                if winput.CAN_CONTROL and not ocr.available():
+                    self.log_threadsafe(tr("Журнал улова: распознавание текста недоступно — названия рыб не читаются"))
                     return
                 seen = max(log.last_texts[-len(frames):], key=len) if log.last_texts else ""
                 self.log_threadsafe(tr("Уведомления «New Item <рыба>» не нашёл — улов не записан. Прочитано: «{v0}». Проверьте область уведомления", v0=seen[:80] or 'ничего'))
@@ -1325,6 +1326,9 @@ class App:
         path = applog.log_dir()
         if sys.platform == "win32":
             os.startfile(path)
+        elif sys.platform == "darwin":
+            import subprocess
+            subprocess.Popen(["open", path])
         else:
             self.log(path)
 

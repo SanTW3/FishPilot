@@ -13,3 +13,8 @@ winrt-Windows.Globalization==3.2.1; sys_platform == "win32"
 winrt-Windows.Graphics.Imaging==3.2.1; sys_platform == "win32"
 winrt-Windows.Media.Ocr==3.2.1; sys_platform == "win32"
 winrt-Windows.Storage.Streams==3.2.1; sys_platform == "win32"
+# macOS: клики и окна (Quartz, AppKit), «Универсальный доступ», распознавание текста Apple Vision
+pyobjc-framework-Cocoa==12.2.2; sys_platform == "darwin"
+pyobjc-framework-Quartz==12.2.2; sys_platform == "darwin"
+pyobjc-framework-ApplicationServices==12.2.2; sys_platform == "darwin"
+pyobjc-framework-Vision==12.2.2; sys_platform == "darwin"

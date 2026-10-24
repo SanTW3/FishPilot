@@ -1,8 +1,10 @@
-"""Ввод мыши и клавиатуры через WinAPI SendInput.
+"""Ввод мыши и клавиатуры: Windows — WinAPI SendInput, macOS — события Quartz (CGEvent).
 
 Roblox игнорирует часть «программных» событий (например, PostMessage),
 поэтому шлём настоящие аппаратные события со скан-кодами.
-На не-Windows системах модуль импортируется, но ничего не делает (для тестов).
+На macOS программе нужно разрешение «Универсальный доступ» (Accessibility) — без него
+система молча выбрасывает события. На других системах модуль ничего не делает (для тестов).
+Координаты на macOS — в пунктах экрана (как у Tk и mss), а не в пикселях Retina.
 """
 import ctypes
 import sys
@@ -10,6 +12,9 @@ import time
 from .i18n import tr
 
 IS_WINDOWS = sys.platform == "win32"
+IS_MAC = sys.platform == "darwin"
+CAN_CONTROL = IS_WINDOWS or IS_MAC      # есть настоящий ввод и поиск окна Roblox
+ROBLOX = "Roblox"                       # так называется окно (Windows) или приложение (macOS)
 
 # «Anti-Detect Micro Delay»: пауза между абсолютным перемещением и подёргиванием курсора
 micro_delay = 0.05
@@ -80,6 +85,40 @@ if IS_WINDOWS:
         return inp
 
 
+# Коды клавиш macOS (раскладка ANSI; кнопку жмём физически, буква от раскладки не зависит)
+MAC_KEYS = {"a": 0, "s": 1, "d": 2, "f": 3, "h": 4, "g": 5, "z": 6, "x": 7, "c": 8, "v": 9, "b": 11, "q": 12,
+            "w": 13, "e": 14, "r": 15, "y": 16, "t": 17, "1": 18, "2": 19, "3": 20, "4": 21, "6": 22, "5": 23,
+            "9": 25, "7": 26, "8": 28, "0": 29, "o": 31, "u": 32, "i": 34, "p": 35, "l": 37, "j": 38,
+            "k": 40, "n": 45, "m": 46, "enter": 36, "tab": 48, "space": 49, "backspace": 51, "esc": 53,
+            "shift": 56, "alt": 58, "f1": 122, "f2": 120, "f3": 99, "f4": 118, "f5": 96, "f6": 97,
+            "f7": 98, "f8": 100, "f9": 101, "f10": 109, "f11": 103, "f12": 111}
+
+if IS_MAC:
+    try:
+        import Quartz
+        from AppKit import NSApplicationActivateIgnoringOtherApps, NSWorkspace
+    except ImportError:          # без pyobjc (разработка) — как на прочих системах
+        Quartz = None
+
+    _held = False                # ЛКМ зажата: движение мыши — это «перетаскивание»
+
+    def _post(event):
+        if Quartz is not None and event is not None:
+            Quartz.CGEventPost(Quartz.kCGHIDEventTap, event)
+
+    def _cursor():
+        return Quartz.CGEventGetLocation(Quartz.CGEventCreate(None))
+
+    def _mouse_event(kind, point):
+        return Quartz.CGEventCreateMouseEvent(None, kind, point, Quartz.kCGMouseButtonLeft)
+
+    def _roblox_app():
+        for app in NSWorkspace.sharedWorkspace().runningApplications():
+            if app.localizedName() in (ROBLOX, "RobloxPlayer"):
+                return app
+        return None
+
+
 def set_dpi_aware():
     """Чтобы координаты мыши совпадали с пикселями скриншота при масштабе 125%/150%."""
     if not IS_WINDOWS:
@@ -94,6 +133,16 @@ def set_dpi_aware():
 
 
 def move_to(x, y):
+    if IS_MAC:
+        if Quartz is None:
+            return
+        kind = Quartz.kCGEventLeftMouseDragged if _held else Quartz.kCGEventMouseMoved
+        _post(_mouse_event(kind, (float(x), float(y))))
+        # Как и на Windows: Roblox замечает курсор только после небольшого движения
+        time.sleep(micro_delay)
+        _post(_mouse_event(kind, (float(x) + 1, float(y))))
+        _post(_mouse_event(kind, (float(x), float(y))))
+        return
     if not IS_WINDOWS:
         return
     vx = user32.GetSystemMetrics(SM_XVIRTUALSCREEN)
@@ -111,13 +160,21 @@ def move_to(x, y):
 
 
 def mouse_down():
+    global _held
     if IS_WINDOWS:
         _send(_mouse(MOUSEEVENTF_LEFTDOWN))
+    elif IS_MAC and Quartz is not None:
+        _held = True
+        _post(_mouse_event(Quartz.kCGEventLeftMouseDown, _cursor()))
 
 
 def mouse_up():
+    global _held
     if IS_WINDOWS:
         _send(_mouse(MOUSEEVENTF_LEFTUP))
+    elif IS_MAC and Quartz is not None:
+        _held = False
+        _post(_mouse_event(Quartz.kCGEventLeftMouseUp, _cursor()))
 
 
 def click(x=None, y=None, hold=0.05):
@@ -130,6 +187,15 @@ def click(x=None, y=None, hold=0.05):
 
 
 def press_key(name, hold=0.05):
+    if IS_MAC:
+        code = MAC_KEYS.get(str(name).lower())
+        if code is None:
+            raise ValueError(tr("Неизвестная клавиша: {name}", name=name))
+        if Quartz is not None:
+            _post(Quartz.CGEventCreateKeyboardEvent(None, code, True))
+            time.sleep(hold)
+            _post(Quartz.CGEventCreateKeyboardEvent(None, code, False))
+        return
     if not IS_WINDOWS:
         return
     vk = VK.get(str(name).lower())
@@ -146,8 +212,40 @@ def type_text(text):
         time.sleep(0.03)
 
 
+def accessibility_ok(prompt=False):
+    """macOS: разрешён ли программе «Универсальный доступ» (без него клики и клавиши не доходят).
+    prompt=True — система сама покажет окно с кнопкой «Открыть Системные настройки»."""
+    if not IS_MAC or Quartz is None:
+        return True
+    try:
+        from ApplicationServices import AXIsProcessTrustedWithOptions, kAXTrustedCheckOptionPrompt
+        return bool(AXIsProcessTrustedWithOptions({kAXTrustedCheckOptionPrompt: bool(prompt)}))
+    except Exception:
+        return True
+
+
+def screen_capture_ok(prompt=False):
+    """macOS: разрешена ли «Запись экрана» (без неё снимки — только обои рабочего стола, без окон)."""
+    if not IS_MAC or Quartz is None:
+        return True
+    try:
+        if Quartz.CGPreflightScreenCaptureAccess():
+            return True
+        if prompt:
+            Quartz.CGRequestScreenCaptureAccess()
+        return False
+    except Exception:
+        return True
+
+
 def foreground_title():
-    """Заголовок активного окна ('' вне Windows)."""
+    """Заголовок активного окна; на macOS — имя активного приложения ('' на прочих системах)."""
+    if IS_MAC:
+        if Quartz is None:
+            return ""
+        app = NSWorkspace.sharedWorkspace().frontmostApplication()
+        name = str(app.localizedName() or "") if app else ""
+        return ROBLOX if name == "RobloxPlayer" else name
     if not IS_WINDOWS:
         return ""
     hwnd = user32.GetForegroundWindow()
@@ -156,8 +254,26 @@ def foreground_title():
     return buf.value
 
 
+def _mac_roblox_window():
+    """Самое большое обычное окно приложения Roblox: (x, y, w, h) в пунктах или None."""
+    if Quartz is None:
+        return None
+    opts = Quartz.kCGWindowListOptionOnScreenOnly | Quartz.kCGWindowListExcludeDesktopElements
+    best = None
+    for w in Quartz.CGWindowListCopyWindowInfo(opts, Quartz.kCGNullWindowID) or []:
+        if w.get("kCGWindowOwnerName") not in (ROBLOX, "RobloxPlayer") or w.get("kCGWindowLayer", 0) != 0:
+            continue
+        b = w.get("kCGWindowBounds") or {}
+        rect = (int(b.get("X", 0)), int(b.get("Y", 0)), int(b.get("Width", 0)), int(b.get("Height", 0)))
+        if best is None or rect[2] * rect[3] > best[2] * best[3]:
+            best = rect
+    return best
+
+
 def roblox_rect():
     """(x, y, w, h) окна Roblox на экране или None."""
+    if IS_MAC:
+        return _mac_roblox_window()
     if not IS_WINDOWS:
         return None
     hwnd = user32.FindWindowW(None, "Roblox")
@@ -170,6 +286,8 @@ def roblox_rect():
 
 
 def roblox_window_exists():
+    if IS_MAC:
+        return Quartz is None or _roblox_app() is not None
     if not IS_WINDOWS:
         return True
     return bool(user32.FindWindowW(None, "Roblox"))
@@ -177,6 +295,14 @@ def roblox_window_exists():
 
 def focus_roblox():
     """Выводит окно Roblox на передний план. True, если окно найдено."""
+    if IS_MAC:
+        if Quartz is None:
+            return True
+        app = _roblox_app()
+        if app is None:
+            return False
+        app.activateWithOptions_(NSApplicationActivateIgnoringOtherApps)
+        return True
     if not IS_WINDOWS:
         return True
     hwnd = user32.FindWindowW(None, "Roblox")

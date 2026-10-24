@@ -478,6 +478,11 @@ def roblox_in_front(monkeypatch):
     """В тестах «игра» всегда на переднем плане: иначе на Windows (CI) движок ждал бы окно Roblox вечно."""
     from macro import winput
     monkeypatch.setattr(winput, "foreground_title", lambda: "Roblox")
+    # macOS (CI): без настоящих кликов и без системных запросов разрешений
+    monkeypatch.setattr(winput, "accessibility_ok", lambda prompt=False: True)
+    monkeypatch.setattr(winput, "screen_capture_ok", lambda prompt=False: True)
+    if hasattr(winput, "_post"):
+        monkeypatch.setattr(winput, "_post", lambda event: None)
 
 
 def _shot(fid, bg=(20, 30, 70), scale=1.0, text=None):
@@ -636,15 +641,16 @@ def test_catalog_recognizes_inventory_icons():
 def test_windows_ocr_reads_text():
     """Настоящее распознавание — только на Windows (в CI на windows-latest)."""
     import pytest
-    if sys.platform != "win32":
-        pytest.skip("Windows OCR есть только на Windows")
+    if sys.platform not in ("win32", "darwin"):
+        pytest.skip("системный OCR есть только в Windows и macOS")
     from PIL import ImageDraw, ImageFont
     from macro import ocr
     from macro.catches import clean_name
     if not ocr.available():
         pytest.skip("на этой Windows нет движка OCR")
     img = Image.new("RGB", (420, 60), (20, 30, 60))
-    font = ImageFont.truetype("arialbd.ttf", 32)
+    font = ImageFont.truetype("arialbd.ttf" if sys.platform == "win32"
+                              else "/System/Library/Fonts/Supplemental/Arial Bold.ttf", 32)
     ImageDraw.Draw(img).text((10, 10), "You caught a Golden Carp!", font=font, fill=(255, 255, 255))
     text = ocr.read_text(np.asarray(img), raise_errors=True)
     print("OCR:", repr(text))
@@ -683,8 +689,8 @@ def test_catch_area_defaults_to_center_of_roblox(monkeypatch):
 
 def test_windows_ocr_reads_game_notification():
     """Настоящий снимок области из игры: «New Item <Crimson Polka Puffer>» над водой (только Windows)."""
-    if sys.platform != "win32":
-        pytest.skip("Windows OCR есть только на Windows")
+    if sys.platform not in ("win32", "darwin"):
+        pytest.skip("системный OCR есть только в Windows и macOS")
     from macro import ocr
     from macro.catches import CatchLog, ocr_variants, parse_name
     if not ocr.available():
@@ -1041,6 +1047,36 @@ def test_updater_zip_flow(tmp_path, monkeypatch):
         updater.extract(str(evil), str(tmp_path / "x"))
 
 
+def test_mac_update_parts(tmp_path):
+    """macOS: свой архив и строка контрольной суммы в релизе, скрипт заменяет .app и откатывается при ошибке."""
+    from macro import updater
+    body = f"version: 3.0.0\nzip_sha256: {'a' * 64}\nmac_zip_sha256: {'b' * 64}"
+    assets = [{"name": "FishPilot-win64.zip", "browser_download_url": "http://x/win", "size": 1},
+              {"name": "FishPilot-macos.zip", "browser_download_url": "http://x/mac", "size": 2}]
+    mac = updater.parse_release({"body": body, "assets": assets}, mac=True)
+    win = updater.parse_release({"body": body, "assets": assets}, mac=False)
+    assert (mac.url, mac.sha256) == ("http://x/mac", "b" * 64) and (win.url, win.sha256) == ("http://x/win", "a" * 64)
+    assert updater.parse_release({"body": body, "assets": assets[:1]}, mac=True) is None
+    script = updater.mac_install_script("/tmp/up/new/FishPilot.app", "/Applications/My Apps/FishPilot.app", 77)
+    assert "kill -0 77" in script and "'/Applications/My Apps/FishPilot.app'" in script
+    assert "--wait-instance" in script and "mv '/Applications/My Apps/FishPilot.app.old'" in script
+
+
+def test_mac_retina_grab_is_scaled_to_points(monkeypatch):
+    """Снимок Retina в 2 раза больше области — прореживаем, чтобы распознавание видело те же размеры."""
+    from macro import screen
+
+    class Shot:
+        width, height = 8, 4
+        raw = bytes(range(8 * 4 * 4))
+
+    class Sct:
+        def grab(self, region):
+            return Shot()
+    monkeypatch.setattr(screen, "_sct", lambda: Sct())
+    assert screen.grab((0, 0, 4, 2)).shape == (2, 4, 3)
+
+
 def test_windows_update_script_replaces_files_after_exit(tmp_path):
     """Скрипт обновления по-настоящему: ждёт выхода процесса, копирует файлы robocopy (только Windows)."""
     if sys.platform != "win32":
@@ -1077,7 +1113,9 @@ def _ui_strings():
         if os.path.basename(path).startswith("lang_"):
             continue
         for node in ast.walk(ast.parse(open(path, encoding="utf-8").read())):
-            if (isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "tr"
+            func = getattr(node, "func", None)
+            name = func.id if isinstance(func, ast.Name) else func.attr if isinstance(func, ast.Attribute) else None
+            if (isinstance(node, ast.Call) and name == "tr"            # tr("…") и i18n.tr("…")
                     and node.args and isinstance(node.args[0], ast.Constant)):
                 keys.add(node.args[0].value)
     for page in guide.PAGES:

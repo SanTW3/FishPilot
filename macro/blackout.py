@@ -79,6 +79,10 @@ class Blackout:
     def show(self, all_monitors=True):
         if self.win is not None:
             return True
+        if sys.platform == "darwin":
+            # macOS не умеет прятать окно от захвата экрана: под чёрным окном макрос перестал бы видеть игру
+            self.log(tr("Чёрный экран есть только в Windows: в macOS макрос под ним перестал бы видеть игру"))
+            return False
         rect = None if all_monitors or sys.platform != "win32" else _roblox_monitor()
         x, y, w, h = rect or virtual_screen(self.root)
         win = tk.Toplevel(self.root, bg="black")

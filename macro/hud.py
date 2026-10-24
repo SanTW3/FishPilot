@@ -73,7 +73,8 @@ class Hud:
         return self.win is not None
 
     def show(self):
-        if self.win is not None:
+        if self.win is not None or sys.platform == "darwin":
+            # macOS: окно нельзя сделать прозрачным для мыши и спрятать от захвата — HUD мешал бы игре
             return
         win = tk.Toplevel(self.root, bg=KEY)
         win.overrideredirect(True)

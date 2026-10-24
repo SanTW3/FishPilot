@@ -13,11 +13,15 @@ FishPilot раздаётся zip-архивом с папкой (FishPilot.exe +
 затем маленький скрипт ждёт, пока программа закроется, копирует новые файлы в папку программы
 и запускает её снова. Настройки и улов лежат в %APPDATA%\\FishPilot и не трогаются.
 Одиночный exe версии 2.x при обновлении переезжает в папку FishPilot рядом с собой.
+
+macOS: в том же релизе FishPilot-macos.zip с FishPilot.app (строка mac_zip_sha256). Распаковка — через
+ditto (zipfile теряет символические ссылки и права внутри .app), после выхода скрипт заменяет .app целиком.
 """
 import hashlib
 import json
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -31,7 +35,10 @@ from .i18n import tr
 
 DEFAULT_REPO = "SanTW3/FishPilot"   # адрес обновлений зашит в программу, из настроек его не берём
 ZIP_ASSET = "FishPilot-win64.zip"
+MAC_ASSET = "FishPilot-macos.zip"
+IS_MAC = sys.platform == "darwin"
 EXE_NAME = "FishPilot.exe"
+MAC_APP = "FishPilot.app"
 TIMEOUT = 20
 MAX_SIZE = 300 * 1024 * 1024
 
@@ -71,12 +78,13 @@ def _get(url, timeout=TIMEOUT):
     return urllib.request.urlopen(req, timeout=timeout)
 
 
-def parse_release(data):
-    """Update из ответа GitHub API о релизе (zip с папкой) или None, если в нём нет zip или версии."""
+def parse_release(data, mac=IS_MAC):
+    """Update из ответа GitHub API о релизе (zip для этой системы) или None, если в нём нет zip или версии."""
     body = data.get("body") or ""
+    name, line = (MAC_ASSET, "mac_zip_sha256") if mac else (ZIP_ASSET, "zip_sha256")
     version = re.search(r"^version:\s*([\d.]+)", body, re.MULTILINE)
-    sha = re.search(r"^zip_sha256:\s*([0-9a-fA-F]{64})", body, re.MULTILINE)
-    asset = next((a for a in data.get("assets") or [] if a.get("name") == ZIP_ASSET), None)
+    sha = re.search(rf"^{line}:\s*([0-9a-fA-F]{{64}})", body, re.MULTILINE)
+    asset = next((a for a in data.get("assets") or [] if a.get("name") == name), None)
     if not (version and sha and asset):
         return None
     return Update(version.group(1), asset["browser_download_url"], sha.group(1).lower(), int(asset.get("size") or 0))
@@ -132,7 +140,14 @@ def extract(zip_path, dest):
             target = os.path.realpath(os.path.join(dest, name))
             if target != root and not target.startswith(root + os.sep):
                 raise ValueError("unsafe path in zip: " + name)
-        z.extractall(dest)
+        if not IS_MAC:
+            z.extractall(dest)
+    if IS_MAC:
+        subprocess.run(["/usr/bin/ditto", "-x", "-k", zip_path, dest], check=True)
+        for folder, dirs, _files in os.walk(dest):
+            if MAC_APP in dirs:
+                return os.path.join(folder, MAC_APP)
+        raise ValueError(tr("в архиве обновления нет {exe}", exe=MAC_APP))
     for folder, _dirs, files in os.walk(dest):
         if EXE_NAME in files:
             return folder
@@ -172,11 +187,44 @@ def install_script(new_dir, app_dir, pid):
     ])
 
 
+def mac_install_script(new_app, app, pid):
+    """Текст sh-скрипта: дождаться выхода (pid), заменить .app (при ошибке вернуть старое), запустить."""
+    q = shlex.quote
+    old = q(app + ".old")
+    return "\n".join([
+        "#!/bin/sh",
+        f"while kill -0 {int(pid)} 2>/dev/null; do sleep 1; done",
+        f"rm -rf {old}",
+        f"if mv {q(app)} {old} && /usr/bin/ditto {q(new_app)} {q(app)}; then rm -rf {old}; "
+        f"else rm -rf {q(app)}; mv {old} {q(app)}; fi",
+        f"/usr/bin/open {q(app)} --args --wait-instance",
+        f"rm -rf {q(os.path.dirname(new_app))}",
+        'rm -f -- "$0"',
+        "",
+    ])
+
+
+def mac_app_path():
+    """…/FishPilot.app по пути к исполняемому файлу внутри него (Contents/MacOS/FishPilot)."""
+    path = os.path.abspath(sys.executable)
+    for _ in range(3):
+        path = os.path.dirname(path)
+    return path
+
+
 def install(zip_path, work_dir, app_dir=None, launch=True):
     """Поставить обновление из zip. Папка программы (app_dir) заменяется скриптом после выхода;
     одиночный exe — переезжает в папку FishPilot рядом с собой. Возвращает папку, где будет программа.
     Текущий процесс после этого нужно закрыть."""
     new_dir = extract(zip_path, os.path.join(work_dir, "new"))
+    if IS_MAC:
+        app = app_dir or mac_app_path()
+        script = os.path.join(work_dir, "install-update.sh")
+        with open(script, "w", encoding="utf-8") as f:
+            f.write(mac_install_script(new_dir, app, os.getpid()))
+        if launch:
+            subprocess.Popen(["/bin/sh", script], close_fds=True, start_new_session=True, env=clean_env())
+        return app
     if app_dir is None:
         here = os.path.dirname(os.path.abspath(sys.executable))
         app_dir = os.path.join(here, "FishPilot") if onefile() else here
