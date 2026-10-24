@@ -1007,6 +1007,7 @@ def _zip_bytes(files):
 def test_updater_zip_flow(tmp_path, monkeypatch):
     import hashlib
     from macro import updater
+    monkeypatch.setattr(updater, "IS_MAC", False)      # путь Windows (папка с exe) — и на macOS-сборщике
     payload = _zip_bytes({"FishPilot/FishPilot.exe": b"MZ new", "FishPilot/_internal/lib.dll": b"dll"})
     zsha = hashlib.sha256(payload).hexdigest()
     release = {"body": f"FishPilot\n\nversion: 9.9.9\nsha256: {'a' * 64}\nzip_sha256: {zsha}\ncommit: abc",

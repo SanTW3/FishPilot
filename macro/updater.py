@@ -78,9 +78,10 @@ def _get(url, timeout=TIMEOUT):
     return urllib.request.urlopen(req, timeout=timeout)
 
 
-def parse_release(data, mac=IS_MAC):
+def parse_release(data, mac=None):
     """Update из ответа GitHub API о релизе (zip для этой системы) или None, если в нём нет zip или версии."""
     body = data.get("body") or ""
+    mac = IS_MAC if mac is None else mac
     name, line = (MAC_ASSET, "mac_zip_sha256") if mac else (ZIP_ASSET, "zip_sha256")
     version = re.search(r"^version:\s*([\d.]+)", body, re.MULTILINE)
     sha = re.search(rf"^{line}:\s*([0-9a-fA-F]{{64}})", body, re.MULTILINE)
