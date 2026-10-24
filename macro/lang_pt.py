@@ -494,4 +494,6 @@ T = {
     "разрешение «Универсальный доступ» для FishPilot (Системные настройки → Конфиденциальность и безопасность)": "permissão “Acessibilidade” para o FishPilot (Ajustes do Sistema → Privacidade e Segurança)",
     "FishPilot уже запущен — посмотрите в Dock.": "O FishPilot já está aberto — veja no Dock.",
     "FishPilot уже запущен — посмотрите на панели задач.": "O FishPilot já está aberto — veja na barra de tarefas.",
+    "Горячие клавиши недоступны: {exc}": "Atalhos de teclado indisponíveis: {exc}",
+    "macOS: горячие клавиши в игре заработают после разрешения «Универсальный доступ» для FishPilot (Системные настройки → Конфиденциальность и безопасность)": "macOS: os atalhos funcionarão no jogo depois de dar ao FishPilot a permissão “Acessibilidade” (Ajustes do Sistema → Privacidade e Segurança)",
 }

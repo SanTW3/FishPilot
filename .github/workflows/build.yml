@@ -126,6 +126,7 @@ jobs:
           echo "--- app log"; cat ~/Library/Application\ Support/FishPilot/logs/fishpilot.log 2>/dev/null || true
           for f in ~/Library/Logs/DiagnosticReports/FishPilot*; do [ -f "$f" ] && { echo "--- $f"; head -120 "$f"; }; done
           test $alive -eq 1
+          grep -q "macOS hotkeys: NSEvent monitors" ~/Library/Application\ Support/FishPilot/logs/fishpilot.log
       - name: Zip
         run: |
           mkdir -p dist/pkg/FishPilot

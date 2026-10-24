@@ -1072,6 +1072,14 @@ def test_updater_zip_flow(tmp_path, monkeypatch):
         updater.extract(str(evil), str(tmp_path / "x"))
 
 
+def test_mac_does_not_load_pynput():
+    """В macOS pynput ронял программу при запуске (раскладка из фонового потока) — его там не грузим."""
+    if sys.platform != "darwin":
+        pytest.skip("только macOS")
+    import macro.gui as g
+    assert g.keyboard is None and g.HOTKEYS and "pynput.keyboard" not in sys.modules
+
+
 def test_mac_update_parts(tmp_path):
     """macOS: свой архив и строка контрольной суммы в релизе, скрипт заменяет .app и откатывается при ошибке."""
     from macro import updater

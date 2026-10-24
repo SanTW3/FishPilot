@@ -18,10 +18,15 @@ from .overlay import AreaSelector, PointPicker
 from .remote import Remote, webapp_link
 from .tgcontrol import TelegramControl, status_text
 
-try:
-    from pynput import keyboard, mouse
-except ImportError:  # без pynput горячие клавиши не работают, но окно открывается
+if sys.platform == "darwin":
+    # В macOS pynput роняет программу (раскладку читает не из главного потока) — там machotkeys.py
     keyboard = mouse = None
+else:
+    try:
+        from pynput import keyboard, mouse
+    except ImportError:  # без pynput горячие клавиши не работают, но окно открывается
+        keyboard = mouse = None
+HOTKEYS = keyboard is not None or sys.platform == "darwin"
 
 # Флаги «событие сгенерировано программой» в low-level хуках Windows:
 # так отличаем свои нажатия (SendInput макроса) от нажатий человека
@@ -952,7 +957,7 @@ class App:
         self._preview = Preview(self.root, self.cfg, self.engine)
 
     def _rebind(self, key):
-        if keyboard is None:
+        if not HOTKEYS:
             self.log(tr("pynput не установлен — горячие клавиши недоступны"))
             return
         self._rebinding = key
@@ -1499,6 +1504,17 @@ class App:
     # ---------- горячие клавиши и события из потоков ----------
     def _start_hotkeys(self):
         self.listener = None
+        if sys.platform == "darwin":
+            try:
+                from .machotkeys import MacHotkeys
+                self.listener = MacHotkeys(lambda name: self.events.put(("key", name)))
+            except Exception as exc:
+                log.exception("mac hotkeys")
+                self.log(tr("Горячие клавиши недоступны: {exc}", exc=exc))
+            if not winput.accessibility_ok():
+                self.log(tr("macOS: горячие клавиши в игре заработают после разрешения «Универсальный доступ» "
+                            "для FishPilot (Системные настройки → Конфиденциальность и безопасность)"))
+            return
         if keyboard is None:
             self.log(tr("pynput не установлен — горячие клавиши F1/F2/F3 не работают"))
             return
