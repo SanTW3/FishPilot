@@ -11,6 +11,7 @@ from .i18n import tr
 
 CATCH_FRAME_GAP = 0.4    # с между снимками уведомления о рыбе
 CATCH_MAX_FRAMES = 6
+READY_WAIT_MAX = 3.0      # с — потолок подстройки паузы перед забросом
 
 
 def catch_area(cfg):
@@ -82,6 +83,10 @@ class MacroEngine:
         self._thread = None
         self._mouse_held = False
         self._mouse_sent = 0.0
+        # Подстройка «игра готова к забросу»: первый заброс после поимки (или после старта) иногда не
+        # срабатывает — игра ещё показывает анимацию поимки или достаёт удочку, — и макрос ждал перезаброса
+        # «Перезаброс через» секунд. Такой промах добавляет паузу перед забросом, удачные — понемногу убирают
+        self.ready_wait = 0.0
         self._in_minigame = False  # в мини-игре рыбу можно на кадр потерять — не требуем её
         self.last_detection = None
         self.live = {}            # для HUD: полоса, рыба, ЛКМ, кадров в секунду — обновляется в мини-игре
@@ -299,10 +304,15 @@ class MacroEngine:
         try:
             winput.micro_delay = float(self.cfg["micro_delay"])
             self._focus_roblox()
+            fresh = True                     # первый заброс после старта или после рыбы
             while True:
                 self._pre_cast()
                 self._cast()
-                if not self._wait_for_bite():
+                bite = self._wait_for_bite()
+                if fresh:
+                    self._learn_cast(bite)
+                fresh = False
+                if not bite:
                     self.watchdog.on_cast_failed()
                     self.log(tr("Нет поклёвки за {v0} с — перезаброс ({failed_casts} подряд)", v0=self.cfg['recast_timeout'], failed_casts=self.watchdog.failed_casts))
                     self._check()
@@ -317,6 +327,7 @@ class MacroEngine:
                 self._emit_stats()
                 self._post_catch()
                 self.stats["loops"] += 1
+                fresh = True
         except _Stopped:
             pass
         except Exception as exc:
@@ -359,12 +370,22 @@ class MacroEngine:
         if cfg.get("auto_select_bait"):
             self._click(cfg["bait_point"], "bait_click_delay")
 
+    def _learn_cast(self, bite):
+        if not bite and self.ready_wait < READY_WAIT_MAX:
+            self.ready_wait = min(self.ready_wait + 0.5, READY_WAIT_MAX)
+            self.log(tr("Первый заброс не сработал — похоже, игра ещё не была готова. Пауза перед забросом "
+                        "теперь {v:.1f} с", v=self.ready_wait))
+        elif bite:
+            self.ready_wait = max(self.ready_wait - 0.1, 0.0)
+
     def _cast(self):
         cfg = self.cfg
         self.on_status(tr("Заброс"), "blue")
         self._ensure_roblox()
         winput.move_to(*cfg["water_point"])
         self._delay("cursor_delay")
+        if self.ready_wait:
+            self._sleep(self.ready_wait)
         self._set_mouse(True)
         try:
             self._sleep(float(cfg["cast_hold"]))

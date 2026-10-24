@@ -496,4 +496,5 @@ T = {
     "FishPilot уже запущен — посмотрите на панели задач.": "FishPilot ya está abierto: míralo en la barra de tareas.",
     "Горячие клавиши недоступны: {exc}": "Atajos de teclado no disponibles: {exc}",
     "macOS: горячие клавиши в игре заработают после разрешения «Универсальный доступ» для FishPilot (Системные настройки → Конфиденциальность и безопасность)": "macOS: los atajos funcionarán en el juego cuando des a FishPilot el permiso «Accesibilidad» (Ajustes del Sistema → Privacidad y seguridad)",
+    "Первый заброс не сработал — похоже, игра ещё не была готова. Пауза перед забросом теперь {v:.1f} с": "El primer lanzamiento no funcionó: el juego aún no estaba listo. La pausa antes de lanzar ahora es {v:.1f} s",
 }

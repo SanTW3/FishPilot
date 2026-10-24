@@ -659,6 +659,22 @@ def test_windows_ocr_reads_text():
     assert clean_name(text) == "Golden Carp"
 
 
+def test_failed_first_cast_adds_wait():
+    """Первый заброс после рыбы не сработал — пауза перед забросом растёт; удачные забросы её убирают."""
+    from macro import engine as eng
+    logs = []
+    e = eng.MacroEngine(dict(config.DEFAULTS), log=logs.append)
+    e._learn_cast(False)
+    e._learn_cast(False)
+    assert e.ready_wait == 1.0 and len(logs) == 2
+    for _ in range(20):
+        e._learn_cast(True)
+    assert e.ready_wait == 0.0
+    for _ in range(10):
+        e._learn_cast(False)
+    assert e.ready_wait == eng.READY_WAIT_MAX
+
+
 def test_catch_photos_do_not_delay_next_cast(monkeypatch):
     """Снимки уведомления о рыбе идут параллельно: цикл ждёт только «Паузу после рыбы»."""
     from macro import engine as eng

@@ -496,4 +496,5 @@ T = {
     "FishPilot уже запущен — посмотрите на панели задач.": "FishPilot is already running — check the taskbar.",
     "Горячие клавиши недоступны: {exc}": "Hotkeys unavailable: {exc}",
     "macOS: горячие клавиши в игре заработают после разрешения «Универсальный доступ» для FishPilot (Системные настройки → Конфиденциальность и безопасность)": "macOS: hotkeys will work in the game after you grant FishPilot the “Accessibility” permission (System Settings → Privacy & Security)",
+    "Первый заброс не сработал — похоже, игра ещё не была готова. Пауза перед забросом теперь {v:.1f} с": "The first cast didn't work — the game apparently wasn't ready. Wait before casting is now {v:.1f} s",
 }
