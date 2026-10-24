@@ -659,6 +659,23 @@ def test_windows_ocr_reads_text():
     assert clean_name(text) == "Golden Carp"
 
 
+def test_catch_photos_do_not_delay_next_cast(monkeypatch):
+    """Снимки уведомления о рыбе идут параллельно: цикл ждёт только «Паузу после рыбы»."""
+    from macro import engine as eng
+    monkeypatch.setattr(eng.screen, "grab", lambda area: np.zeros((10, 10, 3), np.uint8))
+    got = []
+    cfg = dict(config.DEFAULTS, fish_end_delay=0.1, catch_window=1.2, catch_log_enabled=True,
+               catch_area=[0, 0, 10, 10])
+    e = eng.MacroEngine(cfg, log=lambda t: None, on_catch=got.append)
+    t0 = time.monotonic()
+    e._after_minigame()
+    assert time.monotonic() - t0 < 0.4           # раньше — не меньше catch_window
+    deadline = time.monotonic() + 3
+    while not got and time.monotonic() < deadline:
+        time.sleep(0.05)
+    assert got and len(got[0]) >= 3
+
+
 def test_migration_turns_catch_log_on(tmp_path):
     path = str(tmp_path / "config.json")
     with open(path, "w", encoding="utf-8") as f:
@@ -674,6 +691,11 @@ def test_migration_turns_catch_log_on(tmp_path):
         json.dump({"config_version": 2, "mqtt_url": "wss://broker.emqx.io:8084/mqtt"}, f)
     assert "broker.hivemq.com" in config.load(path)["mqtt_url"]
     assert "shiftr.io:443" in config.load(path)["mqtt_url"]
+    # v8: забросы чаще — пауза после рыбы и между слотами меньше, но только если их не меняли
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump({"config_version": 7, "fish_end_delay": 2.0, "rod_select_delay": 0.8}, f)
+    cfg = config.load(path)
+    assert cfg["fish_end_delay"] == 1.0 and cfg["rod_select_delay"] == 0.8
     # v7: мини-приложение переехало из gpo-macro в FishPilot, свой адрес не трогаем
     for old, new in (("https://santw3.github.io/gpo-macro/", config.DEFAULTS["webapp_url"]),
                      ("https://me.github.io/panel/", "https://me.github.io/panel/")):

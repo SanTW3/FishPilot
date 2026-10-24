@@ -9,7 +9,7 @@ import re
 import shutil
 import sys
 
-CONFIG_VERSION = 7
+CONFIG_VERSION = 8
 
 DEFAULTS = {
     "config_version": CONFIG_VERSION,
@@ -41,7 +41,7 @@ DEFAULTS = {
     "kp": 0.9,
     "kd": 0.3,
     "pd_clamp": 1.0,
-    "fish_end_delay": 2.0,
+    "fish_end_delay": 1.0,
 
     # Pre-Cast
     "auto_buy_bait": False,
@@ -81,7 +81,7 @@ DEFAULTS = {
     "black_spam_delay": 0.25,
     "black_spam_key": "space",
     "black_max_sec": 30.0,
-    "rod_select_delay": 0.5,
+    "rod_select_delay": 0.3,
     "cursor_delay": 0.05,
     "scan_loop_delay": 0.1,
     "approach_damping": 2.0,
@@ -301,6 +301,12 @@ def migrate(cfg, version):
     if version < 7 and str(cfg.get("webapp_url") or "").rstrip("/").lower() == "https://santw3.github.io/gpo-macro":
         # v7: репозиторий мини-приложения переименован в FishPilot — старый адрес Pages больше не открывается
         cfg["webapp_url"] = DEFAULTS["webapp_url"]
+    if version < 8:
+        # v8: забросы чаще — пауза после рыбы 2 → 1 с, между слотами 0.5 → 0.3 с (только если их не меняли)
+        if float(cfg.get("fish_end_delay") or 0) == 2.0:
+            cfg["fish_end_delay"] = DEFAULTS["fish_end_delay"]
+        if float(cfg.get("rod_select_delay") or 0) == 0.5:
+            cfg["rod_select_delay"] = DEFAULTS["rod_select_delay"]
     # Пустые «свои названия» скрывали название рыбы в каталоге
     cfg["fish_names"] = {k: v for k, v in dict(cfg.get("fish_names") or {}).items() if str(v or "").strip()}
     cfg["config_version"] = CONFIG_VERSION

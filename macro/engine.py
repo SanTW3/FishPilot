@@ -73,7 +73,7 @@ class MacroEngine:
     def __init__(self, cfg, log=print, on_status=None, on_stats=None, on_catch=None):
         self.cfg = cfg
         self.log = log
-        self.on_catch = on_catch  # (rgb снимка области уведомления) -> None, вызывается из потока макроса
+        self.on_catch = on_catch  # (снимки области уведомления) -> None, вызывается из фонового потока
         self.on_status = on_status or (lambda text, color: None)
         self.on_stats = on_stats or (lambda stats: None)
         self.alarms = AlarmManager(cfg, log)
@@ -429,30 +429,31 @@ class MacroEngine:
             self._set_mouse(False)
 
     def _after_minigame(self):
-        """Пауза Fish End Delay; посреди неё — снимок уведомления о пойманной рыбе."""
+        """Пауза Fish End Delay. Уведомление о рыбе снимается параллельно, в отдельном потоке: раньше цикл
+        ждал, пока снимки закончатся (~2 с), и даже маленькая «Пауза после рыбы» не ускоряла забросы."""
         cfg = self.cfg
-        end_delay = float(cfg["fish_end_delay"])
-        if not (cfg.get("catch_log_enabled") and self.on_catch):
-            self._sleep(end_delay)
-            return
-        area = catch_area(cfg)
-        # Уведомление «New Item <рыба>» появляется сразу после поимки и быстро гаснет —
-        # снимаем его всё окно catch_window, распознавание возьмёт первый снимок, где оно есть
+        if cfg.get("catch_log_enabled") and self.on_catch:
+            threading.Thread(target=self._capture_catch, args=(catch_area(cfg),), daemon=True).start()
+        self._sleep(float(cfg["fish_end_delay"]))
+
+    def _capture_catch(self, area):
+        """Уведомление «New Item <рыба>» появляется сразу после поимки и быстро гаснет — снимаем его
+        всё окно catch_window, распознавание возьмёт первый снимок, где оно есть."""
+        cfg = self.cfg
         start = max(float(cfg["catch_capture_delay"]), 0.0)
         window = max(float(cfg.get("catch_window") or 2.0), start + CATCH_FRAME_GAP)
-        self._sleep(start)
+        self._stop.wait(start)
         frames, spent = [], start
-        while spent < window and len(frames) < CATCH_MAX_FRAMES:
+        while spent < window and len(frames) < CATCH_MAX_FRAMES and not self._stop.is_set():
             try:
                 frames.append(screen.grab(area))
             except Exception as exc:
                 self.log(tr("Не удалось снять уведомление о рыбе: {exc}", exc=exc))
                 break
-            self._sleep(CATCH_FRAME_GAP)
+            self._stop.wait(CATCH_FRAME_GAP)
             spent += CATCH_FRAME_GAP
         if frames:
             self.on_catch(frames)
-        self._sleep(max(end_delay - spent, 0.0))
 
     def _post_catch(self):
         cfg = self.cfg
