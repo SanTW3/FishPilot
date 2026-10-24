@@ -251,7 +251,9 @@ def test_engine_full_loop(monkeypatch):
     i = actions.index(("key", "e"))
     assert actions[i + 1:i + 7] == [("click", (1, 1)), ("click", (2, 2)), ("type", "5"),
                                     ("click", (1, 1)), ("click", (3, 3)), ("click", (2, 2))]
-    assert actions.count(("down",)) == actions.count(("up",))  # мышь никогда не остаётся зажатой
+    # Мышь не остаётся зажатой: последнее действие с ЛКМ — отпустить. (Нажатий может быть больше, чем
+    # отпусканий: при долгом удержании нажатие повторяется, чтобы игра не «потеряла» кнопку)
+    assert [a for a in actions if a in (("down",), ("up",))][-1] == ("up",)
 
 
 def test_telegram_control_accepts_only_own_chat():
