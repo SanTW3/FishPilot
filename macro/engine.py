@@ -83,9 +83,10 @@ class MacroEngine:
         self._thread = None
         self._mouse_held = False
         self._mouse_sent = 0.0
-        # Подстройка «игра готова к забросу»: первый заброс после поимки (или после старта) иногда не
-        # срабатывает — игра ещё показывает анимацию поимки или достаёт удочку, — и макрос ждал перезаброса
-        # «Перезаброс через» секунд. Такой промах добавляет паузу перед забросом, удачные — понемногу убирают
+        # Подстройка паузы между «другим» слотом и удочкой: сразу после того, как в руки взят предмет, игра
+        # какое-то время не даёт сменить его — нажатие слота удочки терялось, макрос «забрасывал» чужим
+        # предметом и ждал «Перезаброс через». Такой промах (первый заброс после рыбы или старта) добавляет
+        # паузу, удачные забросы её понемногу убирают
         self.ready_wait = 0.0
         self._in_minigame = False  # в мини-игре рыбу можно на кадр потерять — не требуем её
         self.last_detection = None
@@ -366,6 +367,8 @@ class MacroEngine:
         # Сначала «что-то другое», потом удочку: так удочка гарантированно в руках,
         # а не снята повторным нажатием той же клавиши
         self._key(cfg["other_hotkey"], "rod_select_delay")
+        if self.ready_wait:
+            self._sleep(self.ready_wait)    # игра ещё не даёт сменить только что взятый предмет
         self._key(cfg["rod_hotkey"], "rod_select_delay")
         if cfg.get("auto_select_bait"):
             self._click(cfg["bait_point"], "bait_click_delay")
@@ -373,8 +376,8 @@ class MacroEngine:
     def _learn_cast(self, bite):
         if not bite and self.ready_wait < READY_WAIT_MAX:
             self.ready_wait = min(self.ready_wait + 0.5, READY_WAIT_MAX)
-            self.log(tr("Первый заброс не сработал — похоже, игра ещё не была готова. Пауза перед забросом "
-                        "теперь {v:.1f} с", v=self.ready_wait))
+            self.log(tr("Первый заброс не сработал — похоже, удочка не успела оказаться в руках. Добавляю "
+                        "паузу между слотами: +{v:.1f} с", v=self.ready_wait))
         elif bite:
             self.ready_wait = max(self.ready_wait - 0.1, 0.0)
 
@@ -384,8 +387,6 @@ class MacroEngine:
         self._ensure_roblox()
         winput.move_to(*cfg["water_point"])
         self._delay("cursor_delay")
-        if self.ready_wait:
-            self._sleep(self.ready_wait)
         self._set_mouse(True)
         try:
             self._sleep(float(cfg["cast_hold"]))

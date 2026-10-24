@@ -675,6 +675,21 @@ def test_failed_first_cast_adds_wait():
     assert e.ready_wait == eng.READY_WAIT_MAX
 
 
+def test_extra_wait_goes_between_slots(monkeypatch):
+    """Подстроенная пауза — между «другим» слотом и удочкой: там игра не даёт сразу сменить предмет."""
+    from macro import engine as eng
+    presses = []
+    monkeypatch.setattr(eng.winput, "press_key", lambda k: presses.append((k, time.monotonic())))
+    monkeypatch.setattr(eng.MacroEngine, "_check_black_screen", lambda self: None)
+    cfg = dict(config.DEFAULTS, rod_select_delay=0.0, other_hotkey="2", rod_hotkey="1", auto_buy_bait=False,
+               auto_select_bait=False)
+    e = eng.MacroEngine(cfg, log=lambda t: None)
+    e.ready_wait = 0.3
+    e._pre_cast()
+    (k1, t1), (k2, t2) = presses
+    assert (k1, k2) == ("2", "1") and t2 - t1 >= 0.29
+
+
 def test_catch_photos_do_not_delay_next_cast(monkeypatch):
     """Снимки уведомления о рыбе идут параллельно: цикл ждёт только «Паузу после рыбы»."""
     from macro import engine as eng
@@ -712,6 +727,10 @@ def test_migration_turns_catch_log_on(tmp_path):
         json.dump({"config_version": 7, "fish_end_delay": 2.0, "rod_select_delay": 0.8}, f)
     cfg = config.load(path)
     assert cfg["fish_end_delay"] == 1.0 and cfg["rod_select_delay"] == 0.8
+    # v9: 0.3–0.5 с между слотами — удочка не успевала оказаться в руках
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump({"config_version": 8, "rod_select_delay": 0.3}, f)
+    assert config.load(path)["rod_select_delay"] == 0.8
     # v7: мини-приложение переехало из gpo-macro в FishPilot, свой адрес не трогаем
     for old, new in (("https://santw3.github.io/gpo-macro/", config.DEFAULTS["webapp_url"]),
                      ("https://me.github.io/panel/", "https://me.github.io/panel/")):

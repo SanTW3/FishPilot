@@ -9,7 +9,7 @@ import re
 import shutil
 import sys
 
-CONFIG_VERSION = 8
+CONFIG_VERSION = 9
 
 DEFAULTS = {
     "config_version": CONFIG_VERSION,
@@ -81,7 +81,7 @@ DEFAULTS = {
     "black_spam_delay": 0.25,
     "black_spam_key": "space",
     "black_max_sec": 30.0,
-    "rod_select_delay": 0.3,
+    "rod_select_delay": 0.8,
     "cursor_delay": 0.05,
     "scan_loop_delay": 0.1,
     "approach_damping": 2.0,
@@ -307,6 +307,9 @@ def migrate(cfg, version):
             cfg["fish_end_delay"] = DEFAULTS["fish_end_delay"]
         if float(cfg.get("rod_select_delay") or 0) == 0.5:
             cfg["rod_select_delay"] = DEFAULTS["rod_select_delay"]
+    if version < 9 and float(cfg.get("rod_select_delay") or 0) in (0.3, 0.5):
+        # v9: 0.3–0.5 с между слотами мало — игра не успевает дать сменить предмет, удочка не бралась в руки
+        cfg["rod_select_delay"] = DEFAULTS["rod_select_delay"]
     # Пустые «свои названия» скрывали название рыбы в каталоге
     cfg["fish_names"] = {k: v for k, v in dict(cfg.get("fish_names") or {}).items() if str(v or "").strip()}
     cfg["config_version"] = CONFIG_VERSION
