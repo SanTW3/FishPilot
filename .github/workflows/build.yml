@@ -103,9 +103,9 @@ jobs:
         run: |
           ver=$(python -c "import macro; print(macro.__version__)")
           plist=dist/FishPilot.app/Contents/Info.plist
-          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $ver" "$plist"
-          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $ver" "$plist"
-          /usr/libexec/PlistBuddy -c "Add :LSMinimumSystemVersion string 12.0" "$plist" || true
+          plutil -replace CFBundleShortVersionString -string "$ver" "$plist"
+          plutil -replace CFBundleVersion -string "$ver" "$plist"
+          plutil -replace LSMinimumSystemVersion -string "12.0" "$plist"
           codesign --force --deep --sign - dist/FishPilot.app
           codesign --verify --deep --strict dist/FishPilot.app
       - name: Self-test (Apple Vision OCR inside the app)
