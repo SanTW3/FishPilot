@@ -498,4 +498,6 @@ T = {
     "macOS: горячие клавиши в игре заработают после разрешения «Универсальный доступ» для FishPilot (Системные настройки → Конфиденциальность и безопасность)": "macOS: los atajos funcionarán en el juego cuando des a FishPilot el permiso «Accesibilidad» (Ajustes del Sistema → Privacidad y seguridad)",
     "Первый заброс не сработал — похоже, удочка не успела оказаться в руках. Добавляю паузу между слотами: +{v:.1f} с": "El primer lanzamiento no funcionó: la caña aún no estaba en la mano. Añado pausa entre ranuras: +{v:.1f} s",
     "GitHub временно ограничил проверки с вашего адреса — попробую позже": "GitHub limitó temporalmente las comprobaciones desde tu dirección; lo intentaré más tarde",
+    "Копировать": "Copiar",
+    "Копировать весь журнал": "Copiar todo el registro",
 }

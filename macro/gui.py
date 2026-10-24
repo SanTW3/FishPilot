@@ -528,6 +528,37 @@ class App:
             anchor="w", padx=14, pady=(10, 4))
         self.log_box = ctk.CTkTextbox(logbox, fg_color=FIELD, font=("Consolas", 11), wrap="word", state="disabled")
         self.log_box.pack(fill="both", expand=True, padx=10, pady=(0, 10))
+        self._make_copyable(self.log_box._textbox)
+
+    def _make_copyable(self, text):
+        """Журнал только для чтения, но копировать из него можно. Tk не даёт фокус полю в состоянии disabled
+        (Ctrl+C уходил в другой виджет), а при русской раскладке не узнаёт Ctrl+С — ловим клавишу по коду."""
+        def copy(whole=False):
+            try:
+                chunk = "" if whole else text.get("sel.first", "sel.last")
+            except tk.TclError:
+                chunk = ""
+            self.root.clipboard_clear()
+            self.root.clipboard_append(chunk or text.get("1.0", "end-1c"))
+            return "break"
+
+        def on_shortcut(event):
+            key = (event.keysym or "").lower()
+            if key in ("c", "cyrillic_es") or event.keycode == 67:           # C на любой раскладке
+                return copy()
+            if key in ("a", "cyrillic_ef") or event.keycode == 65:           # A — выделить всё
+                text.tag_add("sel", "1.0", "end-1c")
+                return "break"
+            return None
+
+        menu = tk.Menu(text, tearoff=0)
+        menu.add_command(label=tr("Копировать"), command=copy)
+        menu.add_command(label=tr("Копировать весь журнал"), command=lambda: copy(whole=True))
+        text.bind("<Button-1>", lambda e: text.focus_set(), add="+")
+        text.bind("<Control-Key>", on_shortcut)
+        text.bind("<Command-Key>" if sys.platform == "darwin" else "<Control-Key>", on_shortcut)
+        for button in ("<Button-3>", "<Button-2>") if sys.platform == "darwin" else ("<Button-3>",):
+            text.bind(button, lambda e: menu.tk_popup(e.x_root, e.y_root))
 
     def _refresh_checklist(self):
         """Галочки на «Главной»: что уже настроено, а что нет (зелёное — готово, оранжевое — надо сделать)."""
