@@ -496,8 +496,10 @@ T = {
     "FishPilot уже запущен — посмотрите на панели задач.": "FishPilot is already running — check the taskbar.",
     "Горячие клавиши недоступны: {exc}": "Hotkeys unavailable: {exc}",
     "macOS: горячие клавиши в игре заработают после разрешения «Универсальный доступ» для FishPilot (Системные настройки → Конфиденциальность и безопасность)": "macOS: hotkeys will work in the game after you grant FishPilot the “Accessibility” permission (System Settings → Privacy & Security)",
-    "Первый заброс не сработал — похоже, удочка не успела оказаться в руках. Добавляю паузу между слотами: +{v:.1f} с": "The first cast didn't work — the rod apparently wasn't in hand yet. Adding a pause between slots: +{v:.1f} s",
     "GitHub временно ограничил проверки с вашего адреса — попробую позже": "GitHub has temporarily limited checks from your address — will try again later",
     "Копировать": "Copy",
     "Копировать весь журнал": "Copy the whole log",
+    "Первый заброс не сработал — игра, похоже, не принимает клавиши слотов сразу после поимки. Включаю «Клик перед выбором удочки» (Тонкая настройка → Задержки)": "The first cast didn't work — the game apparently ignores slot keys right after a catch. Turning on “Click before picking the rod” (Fine-tuning → Delays)",
+    "Клик перед выбором удочки": "Click before picking the rod",
+    "Если после поимки удочка не берётся в руки — включается сама": "If the rod isn't picked up after a catch — turns on by itself",
 }

@@ -129,7 +129,8 @@ class MqttLink:
         c.on_message = self._on_message
         self._client = c
         try:
-            c.connect_async(host, port, keepalive=50)
+            # 20 с: VPN и домашние роутеры рвут «молчащие» соединения — раньше связь пропадала каждые 20–60 с
+            c.connect_async(host, port, keepalive=20)
             c.loop_start()
         except Exception as exc:
             self.error = str(exc)

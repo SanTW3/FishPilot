@@ -783,6 +783,8 @@ class App:
         self._num(f, tr("Дополнительно"), "post_focus_delay", tr("Пауза для стабильности"), unit=tr("с"))
         f = self._card(page, tr("Рыбалка"))
         self._num(f, tr("Между слотами при выборе удочки"), "rod_select_delay", unit=tr("с"))
+        self._switch(f, tr("Клик перед выбором удочки"), "wake_click",
+                     tr("Если после поимки удочка не берётся в руки — включается сама"))
         self._num(f, tr("После движения курсора"), "cursor_delay", unit=tr("с"))
         self._num(f, tr("Проверка поклёвки каждые"), "scan_loop_delay", tr("Меньше — быстрее, но больше нагрузка"), unit=tr("с"))
         self._num(f, tr("Микропауза мыши"), "micro_delay", tr("Против детекта Roblox (0.05 = 50 мс)"), unit=tr("с"))

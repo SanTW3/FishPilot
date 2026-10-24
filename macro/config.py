@@ -82,6 +82,7 @@ DEFAULTS = {
     "black_spam_key": "space",
     "black_max_sec": 30.0,
     "rod_select_delay": 0.8,
+    "wake_click": False,        # клик по воде перед выбором удочки (включается сам, если после рыбы слоты не нажимаются)
     "cursor_delay": 0.05,
     "scan_loop_delay": 0.1,
     "approach_damping": 2.0,

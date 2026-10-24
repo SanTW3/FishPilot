@@ -659,35 +659,29 @@ def test_windows_ocr_reads_text():
     assert clean_name(text) == "Golden Carp"
 
 
-def test_failed_first_cast_adds_wait():
-    """Первый заброс после рыбы не сработал — пауза перед забросом растёт; удачные забросы её убирают."""
+def test_failed_first_cast_turns_on_wake_click(monkeypatch):
+    """Первый заброс после рыбы не сработал — включается клик перед выбором удочки, и он идёт до слотов."""
     from macro import engine as eng
-    logs = []
-    e = eng.MacroEngine(dict(config.DEFAULTS), log=logs.append)
-    e._learn_cast(False)
-    e._learn_cast(False)
-    assert e.ready_wait == 1.0 and len(logs) == 2
-    for _ in range(20):
-        e._learn_cast(True)
-    assert e.ready_wait == 0.0
-    for _ in range(10):
-        e._learn_cast(False)
-    assert e.ready_wait == eng.READY_WAIT_MAX
-
-
-def test_extra_wait_goes_between_slots(monkeypatch):
-    """Подстроенная пауза — между «другим» слотом и удочкой: там игра не даёт сразу сменить предмет."""
-    from macro import engine as eng
-    presses = []
-    monkeypatch.setattr(eng.winput, "press_key", lambda k: presses.append((k, time.monotonic())))
+    logs, actions = [], []
+    monkeypatch.setattr(eng.winput, "press_key", lambda k: actions.append(("key", k)))
+    monkeypatch.setattr(eng.winput, "click", lambda x, y: actions.append(("click", (x, y))))
     monkeypatch.setattr(eng.MacroEngine, "_check_black_screen", lambda self: None)
-    cfg = dict(config.DEFAULTS, rod_select_delay=0.0, other_hotkey="2", rod_hotkey="1", auto_buy_bait=False,
-               auto_select_bait=False)
-    e = eng.MacroEngine(cfg, log=lambda t: None)
-    e.ready_wait = 0.3
-    e._pre_cast()
-    (k1, t1), (k2, t2) = presses
-    assert (k1, k2) == ("2", "1") and t2 - t1 >= 0.29
+    cfg = dict(config.DEFAULTS, rod_select_delay=0.0, cursor_delay=0.0, other_hotkey="2", rod_hotkey="7",
+               water_point=[50, 60], auto_buy_bait=False, auto_select_bait=False)
+    e = eng.MacroEngine(cfg, log=logs.append)
+    e._pre_cast(fresh=True)
+    assert actions == [("key", "2"), ("key", "7")]          # по умолчанию без клика
+    e._learn_cast(True)
+    assert not cfg["wake_click"]
+    e._learn_cast(False)
+    e._learn_cast(False)
+    assert cfg["wake_click"] and len(logs) == 1
+    actions.clear()
+    e._pre_cast(fresh=True)
+    assert actions == [("click", (50, 60)), ("key", "2"), ("key", "7")]
+    actions.clear()
+    e._pre_cast(fresh=False)                                 # перезаброс — без клика
+    assert actions == [("key", "2"), ("key", "7")]
 
 
 def test_catch_photos_do_not_delay_next_cast(monkeypatch):

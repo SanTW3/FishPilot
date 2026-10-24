@@ -496,8 +496,10 @@ T = {
     "FishPilot уже запущен — посмотрите на панели задач.": "O FishPilot já está aberto — veja na barra de tarefas.",
     "Горячие клавиши недоступны: {exc}": "Atalhos de teclado indisponíveis: {exc}",
     "macOS: горячие клавиши в игре заработают после разрешения «Универсальный доступ» для FishPilot (Системные настройки → Конфиденциальность и безопасность)": "macOS: os atalhos funcionarão no jogo depois de dar ao FishPilot a permissão “Acessibilidade” (Ajustes do Sistema → Privacidade e Segurança)",
-    "Первый заброс не сработал — похоже, удочка не успела оказаться в руках. Добавляю паузу между слотами: +{v:.1f} с": "O primeiro arremesso não funcionou — a vara ainda não estava na mão. Adicionando pausa entre slots: +{v:.1f} s",
     "GitHub временно ограничил проверки с вашего адреса — попробую позже": "O GitHub limitou temporariamente as verificações do seu endereço — tentarei mais tarde",
     "Копировать": "Copiar",
     "Копировать весь журнал": "Copiar todo o registro",
+    "Первый заброс не сработал — игра, похоже, не принимает клавиши слотов сразу после поимки. Включаю «Клик перед выбором удочки» (Тонкая настройка → Задержки)": "O primeiro arremesso não funcionou — o jogo parece ignorar as teclas de slot logo após uma captura. Ativando “Clique antes de pegar a vara” (Ajustes avançados → Atrasos)",
+    "Клик перед выбором удочки": "Clique antes de pegar a vara",
+    "Если после поимки удочка не берётся в руки — включается сама": "Se após uma captura a vara não for pega, ativa-se sozinho",
 }

@@ -11,7 +11,6 @@ from .i18n import tr
 
 CATCH_FRAME_GAP = 0.4    # с между снимками уведомления о рыбе
 CATCH_MAX_FRAMES = 6
-READY_WAIT_MAX = 3.0      # с — потолок подстройки паузы перед забросом
 
 
 def catch_area(cfg):
@@ -83,11 +82,6 @@ class MacroEngine:
         self._thread = None
         self._mouse_held = False
         self._mouse_sent = 0.0
-        # Подстройка паузы между «другим» слотом и удочкой: сразу после того, как в руки взят предмет, игра
-        # какое-то время не даёт сменить его — нажатие слота удочки терялось, макрос «забрасывал» чужим
-        # предметом и ждал «Перезаброс через». Такой промах (первый заброс после рыбы или старта) добавляет
-        # паузу, удачные забросы её понемногу убирают
-        self.ready_wait = 0.0
         self._in_minigame = False  # в мини-игре рыбу можно на кадр потерять — не требуем её
         self.last_detection = None
         self.live = {}            # для HUD: полоса, рыба, ЛКМ, кадров в секунду — обновляется в мини-игре
@@ -307,7 +301,7 @@ class MacroEngine:
             self._focus_roblox()
             fresh = True                     # первый заброс после старта или после рыбы
             while True:
-                self._pre_cast()
+                self._pre_cast(fresh)
                 self._cast()
                 bite = self._wait_for_bite()
                 if fresh:
@@ -341,7 +335,7 @@ class MacroEngine:
                 self.on_status(tr("Остановлен"), "red")
             self.log(tr("Макрос остановлен"))
 
-    def _pre_cast(self):
+    def _pre_cast(self, fresh=False):
         cfg = self.cfg
         winput.micro_delay = float(cfg["micro_delay"])
         if winput.CAN_CONTROL and winput.foreground_title() != "Roblox":
@@ -364,22 +358,25 @@ class MacroEngine:
             self._click(cfg["buy_left"], "buy_click_delay")
             self._click(cfg["buy_right"], "buy_click_delay")
             self._click(cfg["buy_middle"], "buy_click_delay")
+        if fresh and cfg.get("wake_click"):
+            # После поимки игра у некоторых не принимает клавиши, пока не будет клика: слоты не нажимались,
+            # персонаж стоял с пустыми руками. Клик по воде пустыми руками ничего не делает, но «будит» ввод
+            self._click(cfg["water_point"], "cursor_delay")
+            self._sleep(0.2)
         # Сначала «что-то другое», потом удочку: так удочка гарантированно в руках,
         # а не снята повторным нажатием той же клавиши
         self._key(cfg["other_hotkey"], "rod_select_delay")
-        if self.ready_wait:
-            self._sleep(self.ready_wait)    # игра ещё не даёт сменить только что взятый предмет
         self._key(cfg["rod_hotkey"], "rod_select_delay")
         if cfg.get("auto_select_bait"):
             self._click(cfg["bait_point"], "bait_click_delay")
 
     def _learn_cast(self, bite):
-        if not bite and self.ready_wait < READY_WAIT_MAX:
-            self.ready_wait = min(self.ready_wait + 0.5, READY_WAIT_MAX)
-            self.log(tr("Первый заброс не сработал — похоже, удочка не успела оказаться в руках. Добавляю "
-                        "паузу между слотами: +{v:.1f} с", v=self.ready_wait))
-        elif bite:
-            self.ready_wait = max(self.ready_wait - 0.1, 0.0)
+        """Первый заброс после рыбы (или старта) не сработал, а следующий — да: значит, игра не приняла клавиши
+        слотов, пока не было клика. Включаем «клик перед выбором удочки» (его видно и в настройках)."""
+        if not bite and not self.cfg.get("wake_click"):
+            self.cfg["wake_click"] = True
+            self.log(tr("Первый заброс не сработал — игра, похоже, не принимает клавиши слотов сразу после "
+                        "поимки. Включаю «Клик перед выбором удочки» (Тонкая настройка → Задержки)"))
 
     def _cast(self):
         cfg = self.cfg
