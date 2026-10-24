@@ -1115,6 +1115,41 @@ def test_mac_does_not_load_pynput():
     assert g.keyboard is None and g.HOTKEYS and "pynput.keyboard" not in sys.modules
 
 
+def test_update_check_uses_manifest_without_api_limit(monkeypatch):
+    """Проверка обновлений — по latest.json из релиза (без лимита API); API — только запасной путь."""
+    import urllib.error
+    from macro import updater
+    manifest = {"version": "9.1.0", "assets": {
+        "win": {"name": "FishPilot-win64.zip", "sha256": "a" * 64, "size": 5},
+        "mac": {"name": "FishPilot-macos.zip", "sha256": "b" * 64, "size": 6}}}
+    asked = []
+
+    class Resp(io.BytesIO):
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            self.close()
+
+    def get(url, timeout=20):
+        asked.append(url)
+        if "api.github.com" in url:
+            raise urllib.error.HTTPError(url, 403, "rate limit exceeded", {}, None)
+        return Resp(json.dumps(manifest).encode())
+    monkeypatch.setattr(updater, "_get", get)
+    u = updater.latest("o/r")
+    assert u.version == "9.1.0" and u.url == "https://github.com/o/r/releases/download/v9.1.0/" + (
+        "FishPilot-macos.zip" if updater.IS_MAC else "FishPilot-win64.zip")
+    assert asked == ["https://github.com/o/r/releases/latest/download/latest.json"]
+    assert updater.parse_manifest(dict(manifest, version="1.0; rm"), "o/r") is None
+    bad = {"version": "9.1.0", "assets": {"win": {"name": "../x.zip", "sha256": "a" * 64}}}
+    assert updater.parse_manifest(bad, "o/r", mac=False) is None
+    # Старый релиз без latest.json, а API упёрся в лимит — понятная ошибка
+    manifest = {}
+    with pytest.raises(RuntimeError):
+        updater.latest("o/r")
+
+
 def test_mac_update_parts(tmp_path):
     """macOS: свой архив и строка контрольной суммы в релизе, скрипт заменяет .app и откатывается при ошибке."""
     from macro import updater

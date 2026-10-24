@@ -26,6 +26,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import urllib.error
 import urllib.request
 import zipfile
 from dataclasses import dataclass
@@ -36,6 +37,9 @@ from .i18n import tr
 DEFAULT_REPO = "SanTW3/FishPilot"   # адрес обновлений зашит в программу, из настроек его не берём
 ZIP_ASSET = "FishPilot-win64.zip"
 MAC_ASSET = "FishPilot-macos.zip"
+# Описание последней версии — файлом в релизе. Его адрес releases/latest/download/… — обычная ссылка
+# GitHub без лимита API (60 запросов в час на IP: за общим интернетом или VPN его выбирали чужие запросы)
+MANIFEST = "latest.json"
 IS_MAC = sys.platform == "darwin"
 EXE_NAME = "FishPilot.exe"
 MAC_APP = "FishPilot.app"
@@ -91,11 +95,40 @@ def parse_release(data, mac=None):
     return Update(version.group(1), asset["browser_download_url"], sha.group(1).lower(), int(asset.get("size") or 0))
 
 
+def parse_manifest(data, repo, mac=None):
+    """Update из latest.json релиза или None."""
+    mac = IS_MAC if mac is None else mac
+    asset = (data.get("assets") or {}).get("mac" if mac else "win") or {}
+    version, sha, name = str(data.get("version") or ""), str(asset.get("sha256") or "").lower(), str(asset.get("name") or "")
+    if not (re.fullmatch(r"\d+(\.\d+){1,3}", version) and re.fullmatch(r"[0-9a-f]{64}", sha)
+            and re.fullmatch(r"[A-Za-z0-9._-]+", name)):
+        return None
+    url = f"https://github.com/{repo}/releases/download/v{version}/{name}"
+    return Update(version, url, sha, int(asset.get("size") or 0))
+
+
+def latest(repo=DEFAULT_REPO):
+    """Последняя версия: сначала latest.json (без лимита), иначе — через API GitHub."""
+    try:
+        with _get(f"https://github.com/{repo}/releases/latest/download/{MANIFEST}") as resp:
+            update = parse_manifest(json.loads(resp.read(1_000_000)), repo)
+        if update is not None:
+            return update
+    except Exception:
+        pass                      # старый релиз без latest.json или нет связи — пробуем API
+    try:
+        with _get(f"https://api.github.com/repos/{repo}/releases/latest") as resp:
+            return parse_release(json.loads(resp.read()))
+    except urllib.error.HTTPError as exc:
+        if exc.code in (403, 429):
+            raise RuntimeError(tr("GitHub временно ограничил проверки с вашего адреса — попробую позже")) from None
+        raise
+
+
 def check(repo=DEFAULT_REPO):
     """Новая версия или None. Ошибки сети пробрасываются. Одиночный exe переезжает в папку даже на той же
     версии — иначе он так и остался бы в старом формате."""
-    with _get(f"https://api.github.com/repos/{repo}/releases/latest") as resp:
-        update = parse_release(json.loads(resp.read()))
+    update = latest(repo)
     if update is None:
         return None
     if is_newer(update.version) or (onefile() and not is_newer(__version__, update.version)):

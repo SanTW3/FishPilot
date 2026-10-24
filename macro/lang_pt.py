@@ -497,4 +497,5 @@ T = {
     "Горячие клавиши недоступны: {exc}": "Atalhos de teclado indisponíveis: {exc}",
     "macOS: горячие клавиши в игре заработают после разрешения «Универсальный доступ» для FishPilot (Системные настройки → Конфиденциальность и безопасность)": "macOS: os atalhos funcionarão no jogo depois de dar ao FishPilot a permissão “Acessibilidade” (Ajustes do Sistema → Privacidade e Segurança)",
     "Первый заброс не сработал — похоже, удочка не успела оказаться в руках. Добавляю паузу между слотами: +{v:.1f} с": "O primeiro arremesso não funcionou — a vara ainda não estava na mão. Adicionando pausa entre slots: +{v:.1f} s",
+    "GitHub временно ограничил проверки с вашего адреса — попробую позже": "O GitHub limitou temporariamente as verificações do seu endereço — tentarei mais tarde",
 }

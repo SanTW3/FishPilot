@@ -172,10 +172,14 @@ jobs:
         run: |
           zsha=$(sha256sum dist/FishPilot-win64.zip | cut -d' ' -f1)
           msha=$(sha256sum dist/FishPilot-macos.zip | cut -d' ' -f1)
+          # latest.json — программа проверяет обновления по нему (обычная ссылка, без лимита API GitHub)
+          printf '{"version":"%s","assets":{"win":{"name":"FishPilot-win64.zip","sha256":"%s","size":%s},"mac":{"name":"FishPilot-macos.zip","sha256":"%s","size":%s}}}\n' \
+            "$VER" "$zsha" "$(stat -c%s dist/FishPilot-win64.zip)" "$msha" "$(stat -c%s dist/FishPilot-macos.zip)" > dist/latest.json
+          cat dist/latest.json
           notes=$(printf '%s\n\n%s\n\nversion: %s\nzip_sha256: %s\nmac_zip_sha256: %s\ncommit: %s' \
             "**Windows:** download FishPilot-win64.zip, unpack it and run FishPilot.exe. **macOS (Apple Silicon):** download FishPilot-macos.zip, unpack it, move FishPilot.app to Applications and see the README for first launch. Installed copies update themselves." \
             "Free, MIT license. Not affiliated with Roblox or Grand Piece Online; automating the game may break its rules — use at your own risk." \
             "$VER" "$zsha" "$msha" "$GITHUB_SHA")
-          gh release create "v$VER" dist/FishPilot-win64.zip dist/FishPilot-macos.zip --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+          gh release create "v$VER" dist/FishPilot-win64.zip dist/FishPilot-macos.zip dist/latest.json --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
             --title "FishPilot $VER" --notes "$notes" --draft
           gh release edit "v$VER" --repo "$GITHUB_REPOSITORY" --draft=false --latest
