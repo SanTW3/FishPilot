@@ -113,6 +113,19 @@ jobs:
           FISHPILOT_SELFTEST_DIR="$RUNNER_TEMP" dist/FishPilot.app/Contents/MacOS/FishPilot --selftest; code=$?
           cat "$RUNNER_TEMP/selftest.txt"
           test $code -eq 0
+      # Настоящий запуск окна: программа должна прожить 20 с (selftest окно не открывает)
+      - name: Launch smoke test
+        run: |
+          rm -rf ~/Library/Logs/DiagnosticReports/FishPilot* 2>/dev/null || true
+          dist/FishPilot.app/Contents/MacOS/FishPilot > "$RUNNER_TEMP/out.txt" 2>&1 &
+          pid=$!
+          sleep 20
+          alive=0; kill -0 $pid 2>/dev/null && alive=1
+          kill $pid 2>/dev/null || true
+          echo "--- stdout/stderr"; cat "$RUNNER_TEMP/out.txt"
+          echo "--- app log"; cat ~/Library/Application\ Support/FishPilot/logs/fishpilot.log 2>/dev/null || true
+          for f in ~/Library/Logs/DiagnosticReports/FishPilot*; do [ -f "$f" ] && { echo "--- $f"; head -120 "$f"; }; done
+          test $alive -eq 1
       - name: Zip
         run: |
           mkdir -p dist/pkg/FishPilot
