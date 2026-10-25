@@ -16,6 +16,7 @@ log = logging.getLogger("fishpilot")
 
 class MacHotkeys:
     def __init__(self, on_key):
+        import AppKit
         import Quartz
         from AppKit import NSEvent, NSEventMaskKeyDown
         names = {code: name for name, code in winput.MAC_KEYS.items()}
@@ -32,6 +33,12 @@ class MacHotkeys:
                     return None
             except Exception:
                 pass
+            # Сочетания с Cmd/Option/Ctrl/Shift (Cmd+Q, Ctrl+F2…) — не горячие клавиши макроса.
+            # Флаг Fn не считаем: на ноутбуке F1–F12 часто жмут вместе с fn
+            mods = (AppKit.NSEventModifierFlagCommand | AppKit.NSEventModifierFlagOption
+                    | AppKit.NSEventModifierFlagControl | AppKit.NSEventModifierFlagShift)
+            if int(event.modifierFlags()) & mods:
+                return None
             return names.get(int(event.keyCode()))
 
         def on_global(event):

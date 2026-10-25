@@ -1108,6 +1108,15 @@ def test_updater_zip_flow(tmp_path, monkeypatch):
         updater.extract(str(evil), str(tmp_path / "x"))
 
 
+def test_hotkeys_ignore_modifier_combos():
+    """Alt+F4 закрывает окно, а не гасит экран макросом: с зажатым модификатором горячая клавиша не срабатывает."""
+    from macro.gui import hotkey_event
+    assert hotkey_event("f4", False) == "f4"
+    assert hotkey_event("f4", True) is None
+    assert hotkey_event("alt_l", True) == "alt_l"      # сам Alt — обычная клавиша (будит погашенный экран)
+    assert hotkey_event(None, False) is None
+
+
 def test_mac_does_not_load_pynput():
     """В macOS pynput ронял программу при запуске (раскладка из фонового потока) — его там не грузим."""
     if sys.platform != "darwin":

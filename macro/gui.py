@@ -68,6 +68,26 @@ def key_name(key):
     return None
 
 
+MODIFIER_KEYS = {"alt", "alt_l", "alt_r", "alt_gr", "ctrl", "ctrl_l", "ctrl_r", "shift", "shift_l", "shift_r",
+                 "cmd", "cmd_l", "cmd_r"}
+
+
+def modifiers_down():
+    """Зажаты ли Ctrl, Alt, Shift или Win (Windows). Alt+F4, Ctrl+F2 и т. п. — не горячие клавиши макроса."""
+    if sys.platform != "win32":
+        return False
+    state = ctypes.windll.user32.GetAsyncKeyState
+    return any(state(vk) & 0x8000 for vk in (0x10, 0x11, 0x12, 0x5B, 0x5C))   # Shift Ctrl Alt LWin RWin
+
+
+def hotkey_event(name, modifiers):
+    """Имя для обработчика горячих клавиш или None: сочетание с модификатором — чужое (Alt+F4 закрывает окно,
+    а не гасит экран). Сами модификаторы пропускаем: любая клавиша будит погашенный экран."""
+    if not name or (modifiers and name not in MODIFIER_KEYS):
+        return None
+    return name
+
+
 def fmt_point(p):
     return f"X {p[0]}  ·  Y {p[1]}" if p else tr("Не задано")
 
@@ -1558,7 +1578,12 @@ class App:
             return not (data.flags & LLMHF_INJECTED)
 
         win = sys.platform == "win32"
-        self.listener = keyboard.Listener(on_press=lambda k: self.events.put(("key", key_name(k))),
+        def on_press(key):
+            name = hotkey_event(key_name(key), modifiers_down())
+            if name:
+                self.events.put(("key", name))
+
+        self.listener = keyboard.Listener(on_press=on_press,
                                           **({"win32_event_filter": real_keys_only} if win else {}))
         self.listener.daemon = True
         self.listener.start()
